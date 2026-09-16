@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {once} from 'node:events';
+import {spawn} from 'node:child_process';
+import {createApp,ROOT} from '../server.mjs';
+import {acquireLock} from '../lib/service-lock.mjs';
+import {sourceFiles,sourceText} from '../lib/source-bundle.mjs';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'evaluator-lifecycle-'));
+test.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+test('one data directory has one writer and releases its lock on close',async()=>{const dir=path.join(root,'lock'),app=createApp({dataDir:dir});assert.throws(()=>createApp({dataDir:dir}),/bereits/);app.server.listen(0,'127.0.0.1');await once(app.server,'listening');await new Promise(r=>app.server.close(r));assert.equal(fs.existsSync(path.join(dir,'service.lock')),false);const release=acquireLock(dir);release()});
+test('real service shutdown and restart preserve saved definitions and evidence',async()=>{
+ const dir=path.join(root,'restart');
+ const launch=async()=>{const child=spawn(process.execPath,[path.join(ROOT,'server.mjs')],{cwd:ROOT,env:{...process.env,COCKPIT_DATA:dir,COCKPIT_PORT:'0'},windowsHide:true,stdio:['ignore','pipe','pipe']});let out='',err='';child.stderr.on('data',b=>err+=b);const base=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{child.kill();reject(Error('Starttimeout '+err))},10000);child.once('error',e=>{clearTimeout(timer);reject(e)});child.stdout.on('data',b=>{out+=b;const m=out.match(/http:\/\/127.0.0.1:\d+/);if(m){clearTimeout(timer);resolve(m[0])}})});return {child,base}};
+ const stop=async({child,base},token)=>{const exited=once(child,'exit');const r=await fetch(base+'/api/shutdown',{method:'POST',headers:{'X-Cockpit-Token':token}});assert.equal(r.status,202);const [code]=await exited;assert.equal(code,0);await assert.rejects(fetch(base+'/api/health'));};
+ let instance=await launch();let b=await (await fetch(instance.base+'/api/bootstrap')).json();const headers={'Content-Type':'application/json','X-Cockpit-Token':b.token,'If-Match':b.libraryRevision};b.library.projects[0].notes='Lifecycle persistence proof';assert.equal((await fetch(instance.base+'/api/library',{method:'PUT',headers,body:JSON.stringify(b.library)})).status,200);const started=await (await fetch(instance.base+'/api/runs',{method:'POST',headers,body:JSON.stringify({testIds:['readme'],requestId:'restart-proof'})})).json();let run;for(let i=0;i<100;i++){run=await (await fetch(instance.base+'/api/runs/'+started.id,{headers})).json();if(run.status!=='running')break;await new Promise(r=>setTimeout(r,20))}assert.equal(run.status,'passed');await stop(instance,b.token);
+ instance=await launch();b=await (await fetch(instance.base+'/api/bootstrap')).json();assert.equal(b.library.projects[0].notes,'Lifecycle persistence proof');const saved=await (await fetch(instance.base+'/api/runs/'+run.id,{headers:{'X-Cockpit-Token':b.token}})).json();assert.deepEqual(saved,run);await stop(instance,b.token);
+});
+test('source bundle includes runnable assets and excludes private data and mutation helpers',()=>{const files=sourceFiles(ROOT).map(f=>f.name);for(const p of ['server.mjs','public/quick-menu.js','resources/quick-presets.json','lib/expression.mjs','Start-Evaluator.ps1','tests/extended.test.mjs'])assert.ok(files.includes(p),p);assert.ok(!files.some(p=>p.startsWith('.data')||p.includes('refine-product')));assert.match(sourceText(ROOT),/SHA256: [a-f0-9]{64}/)});

@@ -1,0 +1,13 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {spawnSync} from 'node:child_process';
+import {ROOT} from '../server.mjs';
+import {engineIdentity} from '../lib/runner.mjs';
+import {sourceFiles} from '../lib/source-bundle.mjs';
+const out=path.join(ROOT,'evidence');fs.mkdirSync(out,{recursive:true});
+const result=spawnSync(process.execPath,['--test','--test-reporter=tap',...fs.readdirSync(path.join(ROOT,'tests')).filter(n=>n.endsWith('.test.mjs')).sort().map(n=>'tests/'+n)],{cwd:ROOT,encoding:'utf8',windowsHide:true});
+fs.writeFileSync(path.join(out,'regression.tap'),result.stdout??'');fs.writeFileSync(path.join(out,'regression.stderr.txt'),result.stderr??'');
+const files=sourceFiles(ROOT).map(f=>({path:f.name,sha256:f.sha256}));
+const receipt={at:new Date().toISOString(),node:process.version,platform:process.platform,exitCode:result.status,signal:result.signal,error:result.error?.message,engineHash:engineIdentity(),files};fs.writeFileSync(path.join(out,'candidate.json'),JSON.stringify(receipt,null,2));
+console.log(result.stdout);if(result.stderr)console.error(result.stderr);console.log(JSON.stringify({exitCode:result.status,engineHash:receipt.engineHash,evidence:out}));process.exitCode=result.status??2;

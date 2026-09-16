@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "projects": [
+    {
+      "id": "cockpit",
+      "name": "Evaluator · lokale Beispiele",
+      "root": "C:/Evaluator-Inspector",
+      "target": "Lokaler Rechner",
+      "candidate": "Evaluator 1.0.0 · Beispieldateien",
+      "notes": "Beispiel: mit node tools/export-examples.mjs an den eigenen Installationsordner anpassen."
+    }
+  ],
+  "tests": [
+    {
+      "id": "readme",
+      "name": "Dokumentation vorhanden",
+      "type": "file",
+      "category": "Smoke",
+      "config": {
+        "path": "README.md",
+        "exists": true,
+        "kind": "file",
+        "minBytes": 100
+      },
+      "purpose": "Demonstriert eine explizite Prüfung mit nachvollziehbarem Sollwert; kein Nachweis für fremde Produkte.",
+      "projectId": "cockpit",
+      "tags": [
+        "Beispiel"
+      ],
+      "enabled": true,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "text",
+      "name": "Erwarteten Dateiinhalt prüfen",
+      "type": "text",
+      "category": "Regression",
+      "config": {
+        "path": "examples/actual.txt",
+        "includes": [
+          "Test-Cockpit"
+        ],
+        "excludes": [
+          "ERROR"
+        ]
+      },
+      "purpose": "Demonstriert eine explizite Prüfung mit nachvollziehbarem Sollwert; kein Nachweis für fremde Produkte.",
+      "projectId": "cockpit",
+      "tags": [
+        "Beispiel"
+      ],
+      "enabled": true,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "json",
+      "name": "Paketvertrag prüfen",
+      "type": "json",
+      "category": "Integration",
+      "config": {
+        "path": "package.json",
+        "checks": [
+          {
+            "path": "/name",
+            "op": "eq",
+            "value": "evaluator-inspector"
+          }
+        ]
+      },
+      "purpose": "Demonstriert eine explizite Prüfung mit nachvollziehbarem Sollwert; kein Nachweis für fremde Produkte.",
+      "projectId": "cockpit",
+      "tags": [
+        "Beispiel"
+      ],
+      "enabled": true,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "csv",
+      "name": "Messdaten auswerten",
+      "type": "csv",
+      "category": "Datenqualität",
+      "config": {
+        "path": "examples/metrics.csv",
+        "delimiter": ",",
+        "columns": [
+          "name",
+          "value"
+        ],
+        "minRows": 2,
+        "rules": [
+          {
+            "column": "value",
+            "op": "gte",
+            "value": 0
+          }
+        ]
+      },
+      "purpose": "Demonstriert eine explizite Prüfung mit nachvollziehbarem Sollwert; kein Nachweis für fremde Produkte.",
+      "projectId": "cockpit",
+      "tags": [
+        "Beispiel"
+      ],
+      "enabled": true,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "compare",
+      "name": "Referenzvergleich",
+      "type": "compare",
+      "category": "Regression",
+      "config": {
+        "left": "examples/expected.txt",
+        "right": "examples/actual.txt",
+        "mode": "text"
+      },
+      "purpose": "Demonstriert eine explizite Prüfung mit nachvollziehbarem Sollwert; kein Nachweis für fremde Produkte.",
+      "projectId": "cockpit",
+      "tags": [
+        "Beispiel"
+      ],
+      "enabled": true,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "manual",
+      "name": "Bedienbarkeit nachvollziehen",
+      "type": "manual",
+      "category": "Manuell",
+      "config": {
+        "steps": [
+          "Vorbedingung herstellen",
+          "Aktion ausführen",
+          "Istzustand mit Sollzustand vergleichen"
+        ],
+        "expected": "Beobachtung entspricht dem beschriebenen Sollzustand."
+      },
+      "purpose": "Demonstriert eine explizite Prüfung mit nachvollziehbarem Sollwert; kein Nachweis für fremde Produkte.",
+      "projectId": "cockpit",
+      "tags": [
+        "Beispiel"
+      ],
+      "enabled": true,
+      "timeoutMs": 10000
+    }
+  ],
+  "suites": [
+    {
+      "id": "examples",
+      "name": "Lokale Beispiele · automatische Prüfungen",
+      "testIds": [
+        "readme",
+        "text",
+        "json",
+        "csv",
+        "compare"
+      ],
+      "stopOnFailure": false
+    }
+  ],
+  "settings": {
+    "allowCommands": false
+  }
+}

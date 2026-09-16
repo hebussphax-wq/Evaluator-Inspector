@@ -1,0 +1,10 @@
+.data/
+.cli-evidence/
+evidence/
+receipts/
+node_modules/
+exports/verification-*/
+*.log
+.env
+.env.*
+!.env.example
