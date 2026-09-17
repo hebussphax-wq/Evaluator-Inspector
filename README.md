@@ -34,7 +34,7 @@ Die generierten Definitionen können anschließend im Testkatalog einzeln auf an
 - Tests haben stabile IDs, Zweck, Sollkriterium, Gegenfälle, Quelle, Kategorie, Tags, Adapterregeln und Zeitlimit.
 - Einzeltests, gefilterte Auswahl und Testpläne gezielt ausführen. Wiederholungen 1–100 werden ausdrücklich geplant. Maximal 10.000 Ausführungen pro Lauf.
 - Ein aktiver Plan, serielle Ausführung, keine versteckten automatischen Wiederholungen. Optional nach dem ersten Fehler stoppen. Offene manuelle Fälle bleiben offen.
-- Abbruch und Zeitlimit beenden den Adapter samt zugehörigem Prozessbaum. Eine nicht bestätigte Beendigung wird als Fehler ausgewiesen.
+- Abbruch und Zeitlimit beenden unter Windows den Prozessbaum über taskkill; unter POSIX wird die Worker-Prozessgruppe beendet und ihr Ende mit Frist geprüft. Linux-Zombies zählen als beendet. Prozesse, die unter POSIX eine eigene Prozessgruppe/Sitzung eröffnen, liegen außerhalb dieser Garantie. Eine nicht bestätigte Beendigung wird als Fehler ausgewiesen.
 - Datei-Inventar zeigt Einträge und direkt zugeordnete Datei-/Vergleichstests. Symlinks, ausgeschlossene Ordner, Zugriffsfehler und Begrenzungen werden ausgewiesen. Eine Verknüpfung bedeutet keine fachliche Testabdeckung.
 
 ## Auswertung und Belege

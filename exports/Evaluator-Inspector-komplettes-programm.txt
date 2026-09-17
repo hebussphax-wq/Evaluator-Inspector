@@ -1,5 +1,5 @@
 Evaluator – Inspector · vollständiger Produktquelltext
-Dateien: 42
+Dateien: 48
 UTF-8 · Quelldateien mit relativen Pfaden; keine Nutzerdaten oder gespeicherten Läufe.
 
 ==============================================================================
@@ -13,7 +13,7 @@ SHA256: 5e494081ac61a3587b14d055ec8aa60e0c495ad6f570e95f414403e9693f1e46
 
 ==============================================================================
 FILE: .github/workflows/test.yml
-SHA256: 1a986b15765c89e168a0dc9a6f6a8c7d5fa17299aa70fa3cdcefcd169776904e
+SHA256: 106952b001a616ab3b29eaa89e56de819da2d39ce617eba0649551707e57ef30
 ==============================================================================
 name: Tests
 on:
@@ -25,13 +25,14 @@ permissions:
   contents: read
 jobs:
   regression:
-    name: Windows / Node ${{ matrix.node }}
-    runs-on: windows-2022
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         node: [22, 24]
+        os: [windows-2022, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -39,6 +40,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
+      - name: Generate platform-specific example paths
+        run: node tools/export-examples.mjs
       - name: Validate example definitions
         run: node cli.mjs validate examples/library.json
       - name: Run all regressions
@@ -63,7 +66,7 @@ exports/verification-*/
 
 ==============================================================================
 FILE: CONTRACT.md
-SHA256: 7c9043f4a8b1261bb51d05cdcc64afba42bb52b4d6e19b6ffe68628de475b718
+SHA256: 7d96e781127f199e1b7b3b6a54bf9ad9ddafd2f725174349ad246945682a0024
 ==============================================================================
 # Datenvertrag · Evaluator – Inspector 1.0.0
 
@@ -427,10 +430,60 @@ http folgt keinen Redirects. status enthält die zulässigen Antworten. headers/
 
 Alle außer health/bootstrap benötigen X-Cockpit-Token aus bootstrap. Keine Fremd-Origin-Zugriffe. Änderungen während eines automatischen Laufs sind gesperrt. Import in der Oberfläche deaktiviert command-Ausführung. Erfolgreicher Transport allein bedeutet kein bestandenes Testergebnis; dafür den Laufstatus und seine Assertions lesen.
 
+## Präzisierungen des vorbereiteten Patches (Version bleibt 1.0.0)
+
+- Textzeilen: leere Datei = 0, LF/CRLF/CR trennen Zeilen; ein abschließender Umbruch erzeugt keine zusätzliche Zeile. `a\nb\n` hat 2 Zeilen. Textvergleich normalisiert CRLF und CR auf LF; Bytevergleich bleibt unverändert.
+- JSON-Pointer: Bei Arrays sind ausschließlich kanonische Indizes `0` oder eine Dezimalzahl ohne führende Null zulässig. `length`, `01`, `-` und geerbte Eigenschaften werden nicht aufgelöst. Objektfelder behalten ihre Namen.
+- Numerische CSV-Prüfungen akzeptieren endliche Dezimalzahlen einschließlich Exponent und äußerem Whitespace. Leere Werte, Hexzahlen, NaN und Infinity bestehen auch `ne` nicht.
+- `len` zählt bei Strings Unicode-Codepoints, bei Arrays Elemente; Grapheme wie kombinierte Akzente können mehrere Codepoints enthalten. Die Ausdruckssprache ist keine JavaScript-Syntax: `-2 ** 2` ergibt weiterhin -4.
+- HTTP unterstützt `includes` und `excludes` für den Antworttext. Command sammelt stdout und stderr als Bytes; das 8-MiB-Limit gilt für beide Ströme gemeinsam und wird als Ausführungsfehler gemeldet. Erst nach Prozessende wird jeder Strom vollständig und strikt als UTF-8 dekodiert, sodass mehrbytige Zeichen an Chunkgrenzen erhalten bleiben; ungültige Bytes in stdout oder stderr sind Ausführungsfehler. `includes`/`excludes` prüfen weiterhin nur stdout.
+- Security kennt auch `sql-patterns` (Muster `union select` und `drop table`). Alle Security-Regeln sind Mustererkennung, keine vollständige Sicherheitsprüfung. Die HTML-Teilmenge erkennt Raw-Text/RCDATA für script/style/textarea/title und Namen aus img-alt sowie input-image-alt. Der Endtag wird case-insensitiv erkannt und darf Leerraum enthalten (`</script >`); Inhalt von script/style trägt nicht zum Textinhalt bei. Die Raw-Text-Regel gilt unabhängig vom Namensraum, daher wird auch `<title>` innerhalb von `<svg>` als RCDATA gelesen und darin verschachtelte Elemente bleiben Text. Attributwerte werden nicht normalisiert; `type` wird für input-image-alt und Button-Werte kleingeschrieben erwartet. Sie bleibt ohne vollständige HTML5-Fehlerkorrektur; doppelte Attribute bleiben Fehler.
+- Engine-Identität (`engineHash`) umfasst package.json, server.mjs, cli.mjs sowie die direkten, nicht rekursiv gesammelten Quell-/Ressourcendateien in lib, public und resources mit den Endungen .mjs/.js/.html/.css/.json. Tests, Dokumentation, Beispielpfade, Werkzeugskripte in tools, Starter-/Stopper-Skripte und CI-Dateien sind ausgeschlossen. Der Umfang ist bewusst konservativ; auch eine UI-Änderung veraltet frühere Freigaben. Davon zu unterscheiden ist das Quellpaket (`tools/package.mjs`, TXT-Download): es enthält bewusst zusätzlich Tests, Dokumentation, Beispiele und Werkzeuge und geht nicht in `engineHash` ein.
+- Beschädigte aktuelle Bibliotheken werden ausschließlich aus dem jüngsten gültigen, vom Store benannten Backup wiederhergestellt. Die beschädigten Originalbytes bleiben separat erhalten, Warnungen sind in bootstrap enthalten und Programme werden deaktiviert. Ohne gültiges Backup verweigert der Start die Wiederherstellung und lässt das Original unverändert. Eine allgemeine Backup-Auswahloberfläche ist noch nicht enthalten.
+- Bei Revisionskonflikt bleibt der lokale Entwurf erhalten. Der Download enthält `library`, die fehlgeschlagene `request` sowie aktuelle `fields` aus offenen Dialogen. Dies ist ein Sicherungsformat für die gezielte Übertragung, keine unmittelbar importierbare Bibliothek. Ein aktualisierter Entwurf muss vor dem Laden des Serverstands erneut gesichert werden.
+- CLI: 0 = vollständig bestanden; 1 = fachlich fehlgeschlagen, abgebrochen, übersprungen oder manuell offen; 2 = Eingabe-, Ausführungs-, Timeout- oder Unterbrechungsfehler. Eine vorhandene Bibliothek im Ausgabeordner wird nicht überschrieben. Dienst und CLI verwenden dieselbe Schreibersperre.
+
+## Persistierter Lauf (schemaVersion der Bibliothek bleibt 1)
+
+Datei: `runs/<id>.json`. `id` ist eine UUID. Ein Lauf ist an seine gespeicherte Definition gebunden; spätere Bibliotheksänderungen schreiben diese nicht um.
+
+| Feld | Inhalt |
+| --- | --- |
+| id, requestId, requestHash | Laufidentität, Idempotenzschlüssel, Hash des Ausführungsauftrags |
+| name, status, startedAt, finishedAt | Anzeigename, Aggregatstatus, ISO-Zeitpunkte; finishedAt erst nach Abschluss |
+| engineVersion, engineHash | Produktversion und Quellidentität |
+| definitionHash, definition | Hash und Snapshot von projects, tests, settings, repeat, stopOnFailure; optional suite |
+| results | Geordnete Ergebnisse für Test und Wiederholung |
+| error | Optionaler laufweiter Infrastrukturfehler |
+
+Ergebnisse enthalten testId, iteration, status, assertions und evidence; nach Ausführung gegebenenfalls startedAt, finishedAt, durationMs, error oder reason. Assertions enthalten label, passed, actual, expected. Evidence ist adapterspezifisch (Dateihashes, HTTP-Antwort, Prozessausgabe, manuelle Urteile). `termination` ist unter Windows `process-tree-terminated`, unter POSIX `process-group-terminated`; die Reichweite steht in `terminationScope`. `unverified` erzwingt status=error und bewahrt den beabsichtigten Zustand in requestedStatus.
+
+Aggregatpriorität: running/queued → running; anschließend cancelled, interrupted, error, timeout, failed, pending_manual, skipped; passed ausschließlich wenn alle Ergebnisse passed sind. Ein leerer Lauf ist error. Der vollständige Ergebnisvektor bleibt bei gemischten Zuständen maßgeblich.
+
+## HTTP-Antworten
+
+| Situation / Route | Status |
+| --- | --- |
+| Erfolgreiche GETs, library PUT, validate, manuelles Urteil | 200 |
+| quick-plans erstellt | 201 |
+| Lauf, Abbruch oder Shutdown angenommen | 202; kein Nachweis des Abschlusses |
+| Ungültige Definition, JSON, Parameter, fehlender Projektordner, allgemeiner Ausführungsaufruf-Fehler | 400 mit error |
+| Host, Origin oder lokaler API-Marker nicht akzeptiert | 403 |
+| Unbekannte Route oder Lauf fehlt | 404 |
+| Bibliotheks-PUT während aktivem Lauf | 409, code=RUN_ACTIVE |
+| Veraltete Revision bei library/quick-plans | 409, code=LIBRARY_CONFLICT |
+| Shutdown während aktivem Lauf | 409 |
+| Eingabekörper >4 MiB | 413 |
+| Schreibanforderung nach Beginn des Shutdowns | 503, code=SERVICE_CLOSING |
+
+`/api/health` liefert zusätzlich pid und dataDir zur Prüfung des Dienstendes. Der Stop-Helfer prüft zuerst Dienstpfad, Sperr-PID und Portbesitzer, dann Prozessende und entfernte Sperre. Offene HTTP-Verbindungen werden nach einer Frist geschlossen; bereits angenommene, verzögerte Schreibanforderungen dürfen danach keine Arbeit starten.
+
+Die lokale API verwendet weiterhin einen Same-Origin-Marker aus bootstrap, keine Benutzeranmeldung. `allowCommands` bleibt eine globale Freigabe mit vollständiger geerbter Umgebung; HTTP-Ziele, Methoden und Bodies sind nicht separat freigegeben. Import über direkte API kann Programme freigeben. Dieser Patch beansprucht dafür keine Sicherheitsisolierung. Definitionen müssen weiterhin als vertrauenswürdige, potenziell wirkende Aufträge behandelt werden.
+
 
 ==============================================================================
 FILE: README.md
-SHA256: 0454ad9852d6dd6643fa776629d6bb9c8d324982eae9f4c3fe0a10a38fd3c122
+SHA256: 4e99b342dc4c3c8ef2f842225a52274d5ccfdb6a52cd73b12aa04b855112d364
 ==============================================================================
 # Evaluator – Inspector
 
@@ -468,7 +521,7 @@ Die generierten Definitionen können anschließend im Testkatalog einzeln auf an
 - Tests haben stabile IDs, Zweck, Sollkriterium, Gegenfälle, Quelle, Kategorie, Tags, Adapterregeln und Zeitlimit.
 - Einzeltests, gefilterte Auswahl und Testpläne gezielt ausführen. Wiederholungen 1–100 werden ausdrücklich geplant. Maximal 10.000 Ausführungen pro Lauf.
 - Ein aktiver Plan, serielle Ausführung, keine versteckten automatischen Wiederholungen. Optional nach dem ersten Fehler stoppen. Offene manuelle Fälle bleiben offen.
-- Abbruch und Zeitlimit beenden den Adapter samt zugehörigem Prozessbaum. Eine nicht bestätigte Beendigung wird als Fehler ausgewiesen.
+- Abbruch und Zeitlimit beenden unter Windows den Prozessbaum über taskkill; unter POSIX wird die Worker-Prozessgruppe beendet und ihr Ende mit Frist geprüft. Linux-Zombies zählen als beendet. Prozesse, die unter POSIX eine eigene Prozessgruppe/Sitzung eröffnen, liegen außerhalb dieser Garantie. Eine nicht bestätigte Beendigung wird als Fehler ausgewiesen.
 - Datei-Inventar zeigt Einträge und direkt zugeordnete Datei-/Vergleichstests. Symlinks, ausgeschlossene Ordner, Zugriffsfehler und Begrenzungen werden ausgewiesen. Eine Verknüpfung bedeutet keine fachliche Testabdeckung.
 
 ## Auswertung und Belege
@@ -539,7 +592,7 @@ tools/verify.mjs führt alle Produkttests aus und schreibt TAP sowie eine Kandid
 
 ==============================================================================
 FILE: Start-Evaluator.cmd
-SHA256: f623e146dd208ba898f3f8b8159d41ceafdeb40d7ef1b030555c9e8374388758
+SHA256: 84fd3cebc3dc47346c2533646ffabb4b3ffb826c221f1f97cce101bf6d72c58b
 ==============================================================================
 @echo off
 "C:\Program Files\PowerShell\7\pwsh.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start-Evaluator.ps1"
@@ -591,7 +644,7 @@ try {
 
 ==============================================================================
 FILE: Stop-Evaluator.cmd
-SHA256: 0185314ffafdb0541436d674d46ac5032fa9d9a1b21564f160b789d809fd49fb
+SHA256: c508aa0936b5b902496aae4666707033e1412beeb63427a73fe720c5dbd0d72f
 ==============================================================================
 @echo off
 "C:\Program Files\PowerShell\7\pwsh.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Stop-Evaluator.ps1"
@@ -600,7 +653,7 @@ if errorlevel 1 pause
 
 ==============================================================================
 FILE: Stop-Evaluator.ps1
-SHA256: 1286544f011fae71999fa28d375b57b5320e427fb7d249d634201240e7bfa024
+SHA256: 38c5d4e7a6922585c738b4afa6aa893fd1f70c142f58534d1f9cfa3791cb9d85
 ==============================================================================
 param([int]$Port = 4318)
 $ErrorActionPreference = 'Stop'
@@ -608,25 +661,31 @@ $address = "http://127.0.0.1:$Port"
 try {
     $health = $null
     try { $health = Invoke-RestMethod -Uri "$address/api/health" -TimeoutSec 2 } catch { }
-    if ($null -eq $health) { Write-Output 'Kein erreichbarer Dienst an diesem Port.'; exit 0 }
+    if ($null -eq $health) { Write-Output 'Kein erreichbarer Dienst an diesem Port; ein Prozessende wurde nicht geprüft.'; exit 0 }
     if ($health.application -ne 'evaluator-inspector' -or [IO.Path]::GetFullPath($health.root) -ne [IO.Path]::GetFullPath($PSScriptRoot)) { throw 'Fremde Dienstidentität; keine Aktion ausgeführt.' }
+    if (-not $health.pid -or -not $health.dataDir) { throw 'Dienst liefert keine prüfbare Prozessidentität.' }
+    $lockFile = Join-Path ([IO.Path]::GetFullPath($health.dataDir)) 'service.lock'
+    $lockText = Get-Content -LiteralPath $lockFile -Raw
+    $identity = ConvertFrom-Json -InputObject $lockText
+    if ($identity.pid -ne $health.pid) { throw 'PID von Dienst und Sperrdatei stimmen nicht überein.' }
+    $owner = Get-Process -Id ([int]$identity.pid)
+    $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port)
+    $matches = @($listeners.Where({ $_.OwningProcess -eq $owner.Id }))
+    if ($matches.Count -eq 0) { throw 'Port gehört nicht zum angegebenen Prozess.' }
     $bootstrap = Invoke-RestMethod -Uri "$address/api/bootstrap" -TimeoutSec 2
     if ($null -ne $bootstrap.active) { throw 'Aktiven Lauf zuerst im Cockpit abbrechen und seinen Abschluss abwarten.' }
     $receipt = Invoke-RestMethod -Uri "$address/api/shutdown" -Method Post -ContentType 'application/json' -Body '{}' -Headers @{'X-Cockpit-Token' = $bootstrap.token} -TimeoutSec 3
     if (-not $receipt.shutdownRequested) { throw 'Abschaltanforderung nicht bestätigt.' }
-    for ($attempt = 0; $attempt -lt 30; $attempt++) {
-        Start-Sleep -Milliseconds 100
-        $stillRunning = $false
-        try { $check = Invoke-RestMethod -Uri "$address/api/health" -TimeoutSec 1; $stillRunning = $true } catch { }
-        if (-not $stillRunning) { Write-Output 'Dienst beendet. Definitionen und Läufe bleiben gespeichert.'; exit 0 }
-    }
-    throw 'Dienstende noch nicht bestätigt.'
+    if (-not $owner.WaitForExit(5000)) { throw 'Prozessende noch nicht bestätigt.' }
+    if (Test-Path -LiteralPath $lockFile) { throw 'Prozess beendet, Datenordnersperre aber noch vorhanden oder neu belegt.' }
+    Write-Output 'Dienstprozess beendet und Datenordnersperre freigegeben. Definitionen und Läufe bleiben gespeichert.'
+    exit 0
 } catch { Write-Error $_; exit 1 }
 
 
 ==============================================================================
 FILE: VERIFICATION.md
-SHA256: 0ea2a15f1117f84a1b889d0ce69a1a8d5e272e0474d024eafaac87a657fec93c
+SHA256: 6d1c26cedfba52bdab3d3ebae9350a90debf3aeb5d70ddf0d2fa201b8218e6d1
 ==============================================================================
 # Verifikation und Veröffentlichungsumfang
 
@@ -634,9 +693,9 @@ Evaluator – Inspector 1.0.0 ist ein lokales Einzelbenutzerwerkzeug. Es umfasst
 
 ## Prüfungen
 
-Die automatisierte Suite umfasst 66 Regressionen. Sie prüft insbesondere positive und negative Adapterfälle, echte Prozessabbruch-/Timeoutwirkung, Schutz der Projektpfade, CSV-/JSON-Grenzfälle, Statistik, Datums-/Schema-/Regex-Regeln, atomare Importvalidierung, dauerhafte Snapshots, konkurrierende Änderungen, Testplanzuordnung und neue Checklistenurteile je Lauf.
+Die ursprüngliche Suite umfasst 66 Regressionen. Der vorbereitete Patch ergänzt gezielte Adapter-, Datenrettungs-, Shutdown-, CLI-, UI-Zustands- und Paketprüfungen. Die tatsächliche Testzahl und Ergebnisse stehen im TAP des jeweiligen Kandidaten. Die Suite prüft insbesondere positive und negative Adapterfälle, echte Prozessabbruch-/Timeoutwirkung, Schutz der Projektpfade, CSV-/JSON-Grenzfälle, Statistik, Datums-/Schema-/Regex-Regeln, atomare Importvalidierung, dauerhafte Snapshots, konkurrierende Änderungen, Testplanzuordnung und neue Checklistenurteile je Lauf.
 
-Ausführen: `node tools/verify.mjs`. Der Befehl schreibt TAP und ein Quellmanifest in den ignorierten Ordner evidence. Die GitHub-Actions-Workflowdatei führt dieselben Prüfungen unter Windows mit Node.js 22 und 24 aus. Der jeweilige Workflowstatus ist der Nachweis für den zugehörigen Commit.
+Ausführen: `node tools/verify.mjs`. Der Befehl schreibt TAP und ein Quellmanifest in den ignorierten Ordner evidence. Die vorbereitete GitHub-Actions-Workflowdatei enthält Windows, Ubuntu und macOS mit Node.js 22 und 24; sie generiert zuerst lokale Beispielpfade. Eine vorbereitete Matrix ist kein Ausführungsnachweis. Der jeweilige Workflowstatus ist erst nach tatsächlichem Lauf der Nachweis für den zugehörigen Commit. Windows-Stop- und .NET-Paketprüfungen werden auf anderen Plattformen ausdrücklich übersprungen. POSIX-Prozessgruppenprüfung umfasst keine Prozesse mit eigener Sitzung/Gruppe.
 
 Die lokale Ausgangslieferung wurde außerdem im Browser bedient: Beispielplan, konfigurierbare A04/A08-Varianten, absichtliche Regex-Gegenprobe und korrigierter Lauf, Vergleich, Checklistenurteile, Dateisuche und ungültiger Import. Start/Stop und Neustart bewahrten Definitionen und alle Lauf-Snapshots. Das Quellpaket wurde unabhängig entpackt und sein Beispielplan tatsächlich ausgeführt.
 
@@ -655,16 +714,17 @@ Nach einem Umzug erzeugt `node tools/export-examples.mjs` die Beispielbibliothek
 
 ==============================================================================
 FILE: cli.mjs
-SHA256: 5b9e2e5c3323564cffacea743fa4e7925a4058be77db446082f595cc6691b8c5
+SHA256: 12171d52ccc57fa1067a9f7998e54d0fd0ab0245236a42b82abe9945d7ec811d
 ==============================================================================
 import fs from 'node:fs';
+import {acquireLock} from './lib/service-lock.mjs';
 import path from 'node:path';
 import {validateLibrary} from './lib/contract.mjs';
 import {Store,Runner,exportRun} from './lib/runner.mjs';
 import {ROOT} from './server.mjs';
 async function main(){const [command,file,...args]=process.argv.slice(2);if(!['validate','run'].includes(command)||!file){console.log('node cli.mjs validate <library.json>\nnode cli.mjs run <library.json> [--suite ID | --tests ID,ID] [--output ORDNER] [--allow-commands]');return 2}const library=validateLibrary(JSON.parse(fs.readFileSync(path.resolve(file),'utf8')));if(command==='validate'){console.log(`Gültig: ${library.tests.length} Tests, ${library.suites.length} Testpläne`);return 0}
  const val=key=>{const i=args.indexOf(key);return i<0?undefined:args[i+1]};library.settings={allowCommands:args.includes('--allow-commands')};
- const dir=path.resolve(val('--output')??path.join(ROOT,'evidence','cli-'+Date.now()));if(fs.existsSync(path.join(dir,'library.json')))throw Error('Ausgabeordner enthält bereits eine Bibliothek; neuen Laufordner wählen');const store=new Store(dir,library),runner=new Runner(store);const options=val('--suite')?{suiteId:val('--suite')}:{testIds:val('--tests')?.split(',')??library.tests.filter(t=>t.enabled!==false).map(t=>t.id)};const run=runner.start(options);process.once('SIGINT',()=>runner.cancel(run.id));await runner.completion;fs.writeFileSync(path.join(dir,'results.xml'),exportRun(run,'junit'));fs.writeFileSync(path.join(dir,'results.csv'),exportRun(run,'csv'));console.log(JSON.stringify({id:run.id,status:run.status,summary:store.listRuns()[0].summary,output:dir},null,2));return run.status==='passed'?0:run.status==='error'?2:1}
+ const dir=path.resolve(val('--output')??path.join(ROOT,'evidence','cli-'+Date.now()));if(fs.existsSync(path.join(dir,'library.json')))throw Error('Ausgabeordner enthält bereits eine Bibliothek; neuen Laufordner wählen');const release=acquireLock(dir);try{if(fs.existsSync(path.join(dir,'library.json')))throw Error('Ausgabeordner enthält bereits eine Bibliothek; neuen Laufordner wählen');const store=new Store(dir,library),runner=new Runner(store);const options=val('--suite')?{suiteId:val('--suite')}:{testIds:val('--tests')?.split(',')??library.tests.filter(t=>t.enabled!==false).map(t=>t.id)};const run=runner.start(options);process.once('SIGINT',()=>runner.cancel(run.id));await runner.completion;fs.writeFileSync(path.join(dir,'results.xml'),exportRun(run,'junit'));fs.writeFileSync(path.join(dir,'results.csv'),exportRun(run,'csv'));console.log(JSON.stringify({id:run.id,status:run.status,summary:store.listRuns()[0].summary,output:dir},null,2));return run.status==='passed'?0:['error','timeout','interrupted'].includes(run.status)?2:1}finally{release()}}
 main().then(code=>process.exitCode=code).catch(e=>{console.error(e.message);process.exitCode=2});
 
 
@@ -864,7 +924,7 @@ gamma,30
 
 ==============================================================================
 FILE: lib/adapters.mjs
-SHA256: 60b08014578dd7419ef3a25b4294191eabe028bb2c1fae953e8db5a7e85e915d
+SHA256: 6e2d8a0c0edd1893d11b29eabe58dc4b445a4450fb5ca443bc376e5d71f69766
 ==============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -884,7 +944,7 @@ export function scoped(root,input,missing=false){
 function read(root,p){const f=scoped(root,p);const s=fs.statSync(f);if(!s.isFile())throw Error('Keine reguläre Datei');if(s.size>MAX_BYTES)throw Error('Datei überschreitet 8 MiB Leselimit');return fs.readFileSync(f)}
 function utf8(buf){return new TextDecoder('utf-8',{fatal:true}).decode(buf)}
 const digest=b=>crypto.createHash('sha256').update(b).digest('hex');
-export function pointer(data,p){let v=data;if(p==='')return {exists:true,value:v};for(const k of p.slice(1).split('/').map(x=>x.replace(/~1/g,'/').replace(/~0/g,'~'))){if(v===null||typeof v!=='object'||!Object.hasOwn(v,k))return {exists:false};v=v[k]}return {exists:true,value:v}}
+export function pointer(data,p){let v=data;if(p==='')return {exists:true,value:v};for(const k of p.slice(1).split('/').map(x=>x.replace(/~1/g,'/').replace(/~0/g,'~'))){if(v===null||typeof v!=='object'||(Array.isArray(v)&&!/^(0|[1-9]\d*)$/.test(k))||!Object.hasOwn(v,k))return {exists:false};v=v[k]}return {exists:true,value:v}}
 export function evaluate(actual,c){
  const v=actual.value,w=c.value;
  if(c.op==='exists')return actual.exists===(w??true);
@@ -912,12 +972,15 @@ export async function execute(test,project,settings){
  const bytes=p=>{const b=read(root,p);evidence.files??=[];evidence.files.push({path:p,bytes:b.length,sha256:digest(b)});return b};
  switch(test.type){
  case'file':{const f=scoped(root,c.path,true),exists=fs.existsSync(f);check('Existenz',exists===c.exists,exists,c.exists);evidence.path=f;if(exists&&c.exists){const s=fs.statSync(f);evidence.bytes=s.size;if(c.kind)check('Dateityp',c.kind==='file'?s.isFile():s.isDirectory(),s.isFile()?'file':s.isDirectory()?'directory':'other',c.kind);if(c.minBytes!==undefined)check('Mindestgröße',s.size>=c.minBytes,s.size,c.minBytes);if(c.maxBytes!==undefined)check('Maximalgröße',s.size<=c.maxBytes,s.size,c.maxBytes);if(c.sha256){const hash=digest(bytes(c.path));check('SHA256',hash===c.sha256.toLowerCase(),hash,c.sha256)}}break}
- case'text':{const text=utf8(bytes(c.path));contentRules(text);const lines=text===''?0:text.split(/\r?\n/).length;evidence.lines=lines;if(c.minLines!==undefined)check('Mindestzeilen',lines>=c.minLines,lines,c.minLines);if(c.maxLines!==undefined)check('Maximalzeilen',lines<=c.maxLines,lines,c.maxLines);break}
+ case'text':{const text=utf8(bytes(c.path));contentRules(text);const lines=text===''?0:text.split(/\r\n|\r|\n/).length-(/[\r\n]$/.test(text)?1:0);evidence.lines=lines;if(c.minLines!==undefined)check('Mindestzeilen',lines>=c.minLines,lines,c.minLines);if(c.maxLines!==undefined)check('Maximalzeilen',lines<=c.maxLines,lines,c.maxLines);break}
  case'json':{const data=JSON.parse(utf8(bytes(c.path)));for(const rule of c.checks){const a=pointer(data,rule.path);check(rule.path+' '+rule.op,evaluate(a,rule),a,Object.hasOwn(rule,'value')?rule.value:true)}break}
- case'csv':{const {columns,rows}=parseCSV(utf8(bytes(c.path)),c.delimiter);evidence.columns=columns;evidence.rowCount=rows.length;if(c.columns)check('Spalten',isDeepStrictEqual(columns,c.columns),columns,c.columns);if(c.minRows!==undefined)check('Mindestzeilen',rows.length>=c.minRows,rows.length,c.minRows);if(c.maxRows!==undefined)check('Maximalzeilen',rows.length<=c.maxRows,rows.length,c.maxRows);for(const col of c.unique??[]){const i=columns.indexOf(col);check('Eindeutig '+col,i>=0&&new Set(rows.map(r=>r[i])).size===rows.length,i<0?'Spalte fehlt':rows.length-new Set(rows.map(r=>r[i])).size,0)}for(const rule of c.rules??[]){const i=columns.indexOf(rule.column);let bad=[];if(i>=0)rows.forEach((r,n)=>{const raw=r[i],numeric=['gt','gte','lt','lte'].includes(rule.op)||typeof rule.value==='number';const value=numeric?(raw.trim()===''?NaN:Number(raw)):raw;if(!evaluate({exists:true,value},rule))bad.push(n+2)});check('Spalte '+rule.column+' '+rule.op,i>=0&&bad.length===0&&rows.length>0,{failedRows:bad.slice(0,100),count:bad.length,missing:i<0,rows:rows.length},Object.hasOwn(rule,'value')?rule.value:true)}break}
- case'compare':{const a=bytes(c.left),b=bytes(c.right);let same;if(c.mode==='bytes')same=a.equals(b);else if(c.mode==='text')same=utf8(a).replace(/\r\n/g,'\n')===utf8(b).replace(/\r\n/g,'\n');else same=isDeepStrictEqual(JSON.parse(utf8(a)),JSON.parse(utf8(b)));check('Vergleich '+c.mode,same,evidence.files,'identisch');break}
+ case'csv':{const {columns,rows}=parseCSV(utf8(bytes(c.path)),c.delimiter);evidence.columns=columns;evidence.rowCount=rows.length;if(c.columns)check('Spalten',isDeepStrictEqual(columns,c.columns),columns,c.columns);if(c.minRows!==undefined)check('Mindestzeilen',rows.length>=c.minRows,rows.length,c.minRows);if(c.maxRows!==undefined)check('Maximalzeilen',rows.length<=c.maxRows,rows.length,c.maxRows);for(const col of c.unique??[]){const i=columns.indexOf(col);check('Eindeutig '+col,i>=0&&new Set(rows.map(r=>r[i])).size===rows.length,i<0?'Spalte fehlt':rows.length-new Set(rows.map(r=>r[i])).size,0)}for(const rule of c.rules??[]){const i=columns.indexOf(rule.column);let bad=[];if(i>=0)rows.forEach((r,n)=>{const raw=r[i],numeric=['gt','gte','lt','lte'].includes(rule.op)||typeof rule.value==='number';const value=numeric?(/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw.trim())?Number(raw):NaN):raw;if((numeric&&!Number.isFinite(value))||!evaluate({exists:true,value},rule))bad.push(n+2)});check('Spalte '+rule.column+' '+rule.op,i>=0&&bad.length===0&&rows.length>0,{failedRows:bad.slice(0,100),count:bad.length,missing:i<0,rows:rows.length},Object.hasOwn(rule,'value')?rule.value:true)}break}
+ case'compare':{const a=bytes(c.left),b=bytes(c.right);let same;if(c.mode==='bytes')same=a.equals(b);else if(c.mode==='text')same=utf8(a).replace(/\r\n|\r/g,'\n')===utf8(b).replace(/\r\n|\r/g,'\n');else same=isDeepStrictEqual(JSON.parse(utf8(a)),JSON.parse(utf8(b)));check('Vergleich '+c.mode,same,evidence.files,'identisch');break}
  case'http':{const start=performance.now();const response=await fetch(c.url,{method:c.method,headers:c.headers,body:c.body,redirect:'manual'});let chunks=[],size=0;if(response.body){for await(const chunk of response.body){size+=chunk.length;if(size>MAX_BYTES){throw Error('HTTP-Antwort überschreitet 8 MiB')}chunks.push(chunk)}}const body=utf8(Buffer.concat(chunks));evidence.http={url:c.url,status:response.status,durationMs:performance.now()-start,bytes:size,body:body.slice(0,16000)};check('HTTP-Status',c.status.includes(response.status),response.status,c.status);contentRules(body);if(c.maxDurationMs!==undefined)check('HTTP-Dauer',evidence.http.durationMs<=c.maxDurationMs,evidence.http.durationMs,c.maxDurationMs);if(c.checks){const data=JSON.parse(body);for(const rule of c.checks){const a=pointer(data,rule.path);check(rule.path+' '+rule.op,evaluate(a,rule),a,Object.hasOwn(rule,'value')?rule.value:true)}}break}
- case'command':{if(!settings.allowCommands)throw Error('Kommandoausführung in Einstellungen deaktiviert');const cwd=scoped(root,c.cwd??'.');const start=performance.now();const result=await new Promise((resolve,reject)=>{const child=spawn(c.executable,c.args,{cwd,shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});let stdout='',stderr='',count=0;const consume=which=>chunk=>{count+=chunk.length;if(count>MAX_BYTES){reject(Error('Prozessausgabe überschreitet 8 MiB'));return}if(which==='out')stdout+=chunk.toString('utf8');else stderr+=chunk.toString('utf8')};child.stdout.on('data',consume('out'));child.stderr.on('data',consume('err'));child.on('error',reject);child.on('close',(code,signal)=>resolve({exitCode:code,signal,stdout,stderr}))});evidence.process={executable:c.executable,args:c.args,cwd,...result,durationMs:performance.now()-start};check('Exitcode',c.expectedExitCodes.includes(result.exitCode),result.exitCode,c.expectedExitCodes);contentRules(result.stdout);if(c.maxDurationMs!==undefined)check('Prozessdauer',evidence.process.durationMs<=c.maxDurationMs,evidence.process.durationMs,c.maxDurationMs);break}
+ case'command':{if(!settings.allowCommands)throw Error('Kommandoausführung in Einstellungen deaktiviert');const cwd=scoped(root,c.cwd??'.');const start=performance.now();const result=await new Promise((resolve,reject)=>{const child=spawn(c.executable,c.args,{cwd,shell:false,windowsHide:true,stdio:['ignore','pipe','pipe']});const output={out:[],err:[]};let count=0,overflow=false;
+ const consume=which=>chunk=>{if(overflow)return;count+=chunk.length;if(count>MAX_BYTES){overflow=true;reject(Error('Prozessausgabe überschreitet 8 MiB'));return}output[which].push(chunk)};
+ child.stdout.on('data',consume('out'));child.stderr.on('data',consume('err'));child.on('error',reject);
+ child.on('close',(code,signal)=>{if(overflow)return;try{resolve({exitCode:code,signal,stdout:utf8(Buffer.concat(output.out)),stderr:utf8(Buffer.concat(output.err))})}catch(error){reject(Error('Prozessausgabe ist kein gültiges UTF-8: '+error.message))}})});evidence.process={executable:c.executable,args:c.args,cwd,...result,durationMs:performance.now()-start};check('Exitcode',c.expectedExitCodes.includes(result.exitCode),result.exitCode,c.expectedExitCodes);contentRules(result.stdout);if(c.maxDurationMs!==undefined)check('Prozessdauer',evidence.process.durationMs<=c.maxDurationMs,evidence.process.durationMs,c.maxDurationMs);break}
  default:if(EXTRA_TYPES.includes(test.type)){const status=await executeExtra(test,{readText:p=>utf8(bytes(p)),check,evidence});if(status)return {status,assertions,evidence};break}else throw Error('Adapter nicht ausführbar: '+test.type);
  }
  if(!assertions.length)throw Error('Keine Prüfungen ausgeführt');return {status:assertions.every(a=>a.passed)?'passed':'failed',assertions,evidence};
@@ -929,7 +992,7 @@ export function inventory(root,{limit=5000}={}){
 
 ==============================================================================
 FILE: lib/contract.mjs
-SHA256: a6bf131e70add8a06c2bd10a87ee106cb0597725523ecde23a760a6e1f0ca1c8
+SHA256: 42272c4a6e101e885b96b66766644eaa8cc407a5e04c2301838066dbde3f571c
 ==============================================================================
 import {isAbsolute} from 'node:path';
 import {EXTRA_TYPES,extraTemplates,validateExtra} from './extended-contract.mjs';
@@ -967,7 +1030,7 @@ export function validateTest(t,projects){
  if(!Number.isInteger(t.timeoutMs)||t.timeoutMs<100||t.timeoutMs>3600000)fail('Timeout muss 100–3600000 ms sein');
  const c=t.config;if(!obj(c))fail('Konfiguration fehlt');
  if(EXTRA_TYPES.includes(t.type)){validateExtra(t);return t}
- const allowed={file:['path','exists','kind','minBytes','maxBytes','sha256'],text:['path','includes','excludes','minLines','maxLines'],json:['path','checks'],csv:['path','delimiter','columns','minRows','maxRows','unique','rules'],compare:['left','right','mode'],http:['url','method','headers','body','status','includes','checks','maxDurationMs'],command:['executable','args','cwd','expectedExitCodes','includes','excludes','maxDurationMs'],manual:['steps','expected']};keys(c,allowed[t.type],'Konfiguration');
+ const allowed={file:['path','exists','kind','minBytes','maxBytes','sha256'],text:['path','includes','excludes','minLines','maxLines'],json:['path','checks'],csv:['path','delimiter','columns','minRows','maxRows','unique','rules'],compare:['left','right','mode'],http:['url','method','headers','body','status','includes','excludes','checks','maxDurationMs'],command:['executable','args','cwd','expectedExitCodes','includes','excludes','maxDurationMs'],manual:['steps','expected']};keys(c,allowed[t.type],'Konfiguration');
  if(['file','text','json','csv'].includes(t.type)&&!str(c.path))fail('Dateipfad fehlt');
  for(const k of ['minBytes','maxBytes','minLines','maxLines','minRows','maxRows','maxDurationMs'])if(c[k]!==undefined&&(!number(c[k])||c[k]<0))fail(`${k}: nichtnegative Zahl erforderlich`);
  for(const [a,b] of [['minBytes','maxBytes'],['minLines','maxLines'],['minRows','maxRows']])if(c[a]!==undefined&&c[b]!==undefined&&c[a]>c[b])fail(`${a} darf ${b} nicht überschreiten`);
@@ -997,7 +1060,7 @@ export function validateLibrary(x){
 
 ==============================================================================
 FILE: lib/expression.mjs
-SHA256: 5317283d183855276126b586182e01c3dfc309957340f3569ff2e6bbdee4af49
+SHA256: c72050446f194a95eac58af085b3d70f8927206e3208bc1f1e1522882c660c6d
 ==============================================================================
 // Pure, bounded expression grammar. No JavaScript evaluation or property access.
 import {isDeepStrictEqual} from 'node:util';
@@ -1005,7 +1068,7 @@ const FUNCTIONS={
  abs:x=>Math.abs(num(x)),floor:x=>Math.floor(num(x)),ceil:x=>Math.ceil(num(x)),round:x=>Math.round(num(x)),sqrt:x=>Math.sqrt(num(x)),
  pow:(x,y)=>Math.pow(num(x),num(y)),min:(...xs)=>Math.min(...numbers(xs)),max:(...xs)=>Math.max(...numbers(xs)),
  sum:xs=>numbers([xs]).reduce((a,b)=>a+b,0),avg:xs=>{const a=numbers([xs]);return a.reduce((x,y)=>x+y,0)/a.length},
- len:x=>{if(typeof x!=='string'&&!Array.isArray(x))throw Error('len erwartet Text oder Array');return x.length},
+ len:x=>{if(typeof x!=='string'&&!Array.isArray(x))throw Error('len erwartet Text oder Array');return typeof x==='string'?[...x].length:x.length},
  clamp:(x,a,b)=>{x=num(x);a=num(a);b=num(b);if(a>b)throw Error('clamp: min > max');return Math.max(a,Math.min(b,x))}
 };
 function num(x){if(typeof x!=='number'||!Number.isFinite(x))throw Error('Endliche Zahl erforderlich');return x}
@@ -1143,12 +1206,21 @@ export function suiteVerdict(suite,library,runs,currentEngineHash){
 
 ==============================================================================
 FILE: lib/html-rules.mjs
-SHA256: 0447a6a33174605811bc774e7fc87ef9aaf7f97cde76941489dced0e8a10e8a4
+SHA256: c8dec551c100724aae4b5a018df7e1f0824ce6f555038dc3f68a32e017e90b80
 ==============================================================================
 export function decodeEntities(s){return s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi,(_,k)=>{const map={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' '};if(k[0]!=='#')return map[k.toLowerCase()]??_;const n=k[1]?.toLowerCase()==='x'?parseInt(k.slice(2),16):Number(k.slice(1));return Number.isInteger(n)&&n>=0&&n<=0x10ffff?String.fromCodePoint(n):'�'})}
 export function parseHTML(input){
  const root={tag:'#root',attrs:{},children:[],text:''},stack=[root],nodes=[];let i=0;
- while(i<input.length){if(input.startsWith('<!--',i)){const end=input.indexOf('-->',i+4);if(end<0)throw Error('Nicht geschlossener HTML-Kommentar');i=end+3;continue}if(input[i]!=='<'){const end=input.indexOf('<',i),j=end<0?input.length:end;stack.at(-1).children.push({text:decodeEntities(input.slice(i,j)),children:[]});i=j;continue}
+ while(i<input.length){
+ const container=stack.at(-1);
+ if(['script','style','textarea','title'].includes(container.tag)){
+   const endTag=new RegExp('</'+container.tag+'(?=[\\s/>])[^>]*>','ig');endTag.lastIndex=i;
+   const end=endTag.exec(input),stop=end?end.index:input.length;
+   const raw=input.slice(i,stop);
+   container.children.push({text:['textarea','title'].includes(container.tag)?decodeEntities(raw):raw,children:[]});
+   stack.pop();i=end?endTag.lastIndex:input.length;continue;
+ }
+ if(input.startsWith('<!--',i)){const end=input.indexOf('-->',i+4);if(end<0)throw Error('Nicht geschlossener HTML-Kommentar');i=end+3;continue}if(input[i]!=='<'){const end=input.indexOf('<',i),j=end<0?input.length:end;stack.at(-1).children.push({text:decodeEntities(input.slice(i,j)),children:[]});i=j;continue}
  let j=i+1,quote='';for(;j<input.length;j++){const ch=input[j];if(quote){if(ch===quote)quote=''}else if(ch==='"'||ch==="'")quote=ch;else if(ch==='>')break}if(j===input.length)throw Error('Unvollständiges HTML-Tag');const token=input.slice(i+1,j);i=j+1;if(token.startsWith('!')||token.startsWith('?'))continue;
  const m=/^\s*(\/?)\s*([A-Za-z][\w:-]*)([\s\S]*)$/.exec(token);if(!m)throw Error('Ungültiges HTML-Tag');const closing=!!m[1],tag=m[2].toLowerCase();if(closing){const at=stack.findLastIndex(n=>n.tag===tag);if(at>0)stack.length=at;continue}
  const attrs=Object.create(null),rest=m[3];let p=0;while(p<rest.length){while(/\s/.test(rest[p]??'')&&p<rest.length)p++;if(p>=rest.length||rest[p]==='/')break;const a=/^([^\s=/>]+)/.exec(rest.slice(p));if(!a)throw Error('HTML-Attribut ungültig');const key=a[1].toLowerCase();p+=a[0].length;while(p<rest.length&&/\s/.test(rest[p]))p++;let value='';if(rest[p]==='='){p++;while(p<rest.length&&/\s/.test(rest[p]))p++;if(rest[p]==='"'||rest[p]==="'"){const q=rest[p++],start=p;while(p<rest.length&&rest[p]!==q)p++;if(p===rest.length)throw Error('Attribut nicht geschlossen');value=rest.slice(start,p++)}else{const start=p;while(p<rest.length&&!/\s/.test(rest[p]))p++;value=rest.slice(start,p).replace(/\/$/,'')}}if(Object.hasOwn(attrs,key))throw Error('Doppeltes HTML-Attribut: '+key);attrs[key]=decodeEntities(value)}
@@ -1156,17 +1228,103 @@ export function parseHTML(input){
  }
  return {root,nodes};
 }
-export function nodeText(node){if(node.attrs?.['aria-hidden']==='true')return '';return ((node.text??'')+(node.children??[]).map(nodeText).join(' ')).replace(/\s+/g,' ').trim()}
+export function nodeText(node){if(node.attrs?.['aria-hidden']==='true'||['script','style'].includes(node.tag))return '';if(node.tag==='img')return (node.attrs.alt??'').trim();return ((node.text??'')+(node.children??[]).map(nodeText).join(' ')).replace(/\s+/g,' ').trim()}
 function accessibleName(node,nodes,allowContent=true){const a=node.attrs;if(a['aria-labelledby']){const text=a['aria-labelledby'].split(/\s+/).map(id=>nodes.find(n=>n.attrs.id===id)).filter(Boolean).map(nodeText).join(' ').trim();if(text)return text}if(a['aria-label']?.trim())return a['aria-label'].trim();return allowContent?nodeText(node):''}
 export function checkHTML(input,rules,c){const {nodes}=parseHTML(input),out=[];const add=(rule,issues)=>out.push({rule,passed:issues.length===0,issues});
  for(const rule of rules){let issues=[];if(rule==='html-lang'){const n=nodes.find(n=>n.tag==='html');if(!n?.attrs.lang?.trim()||! /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(n.attrs.lang))issues.push('html benötigt nichtleeres syntaktisches lang-Attribut')}
  if(rule==='image-alt')nodes.filter(n=>n.tag==='img').forEach((n,i)=>{if(!Object.hasOwn(n.attrs,'alt'))issues.push('Bild '+(i+1)+' ohne alt; data-alt zählt nicht')});
  if(rule==='button-name')nodes.filter(n=>n.tag==='button').forEach((n,i)=>{if(!accessibleName(n,nodes))issues.push('Button '+(i+1)+' ohne erkennbaren Namen')});
- if(rule==='input-name')nodes.filter(n=>['input','select','textarea'].includes(n.tag)&&n.attrs.type!=='hidden').forEach((n,i)=>{const a=n.attrs;let text=accessibleName(n,nodes,false);if(!text&&a.id)text=nodes.filter(l=>l.tag==='label'&&l.attrs.for===a.id).map(nodeText).join(' ').trim();let p=n.parent;while(!text&&p){if(p.tag==='label')text=nodeText(p);p=p.parent}if(!text&&['submit','reset','button'].includes(a.type))text=a.value?.trim()??'';if(!text)issues.push('Formularfeld '+(i+1)+' ohne erkennbaren Namen')});
+ if(rule==='input-name')nodes.filter(n=>['input','select','textarea'].includes(n.tag)&&n.attrs.type!=='hidden').forEach((n,i)=>{const a=n.attrs;let text=accessibleName(n,nodes,false);if(!text&&a.id)text=nodes.filter(l=>l.tag==='label'&&l.attrs.for===a.id).map(nodeText).join(' ').trim();let p=n.parent;while(!text&&p){if(p.tag==='label')text=nodeText(p);p=p.parent}if(!text&&n.tag==='input'&&a.type==='image')text=a.alt?.trim()??'';if(!text&&['submit','reset','button'].includes(a.type))text=a.value?.trim()??'';if(!text)issues.push('Formularfeld '+(i+1)+' ohne erkennbaren Namen')});
  if(rule==='heading-order'){let last=0;for(const n of nodes.filter(n=>/^h[1-6]$/.test(n.tag))){const level=Number(n.tag[1]);if((last===0&&level!==1)||(last&&level>last+1))issues.push('Überschriftensprung '+last+' → '+level);last=level}}
  if(rule==='contrast'){const lum=color=>{let s=color.slice(1);if(s.length===3)s=[...s].map(x=>x+x).join('');const a=[0,2,4].map(i=>parseInt(s.slice(i,i+2),16)/255).map(x=>x<=0.04045?x/12.92:((x+0.055)/1.055)**2.4);return a[0]*0.2126+a[1]*0.7152+a[2]*0.0722};const a=lum(c.foreground),b=lum(c.background),ratio=(Math.max(a,b)+.05)/(Math.min(a,b)+.05);if(ratio<c.minContrast)issues.push('Kontrast '+ratio.toFixed(2)+' < '+c.minContrast)}add(rule,issues)}return out;
 }
 export function checkSecurity(input,rules){let nodes;const getNodes=()=>nodes??=(/<[A-Za-z]/.test(input)?parseHTML(input).nodes:[]);return rules.map(rule=>{let hits=[];const match=re=>{for(const m of input.matchAll(re))hits.push({offset:m.index,match:m[0].slice(0,150)});};switch(rule){case'script-tags':match(/<\s*script\b/gi);break;case'event-handlers':for(const n of getNodes())for(const [key,value]of Object.entries(n.attrs))if(/^on[a-z]/.test(key))hits.push({tag:n.tag,attribute:key,value});break;case'javascript-urls':for(const n of getNodes())for(const [key,value]of Object.entries(n.attrs))if(['href','src','action','formaction','xlink:href'].includes(key)&&/^javascript:/i.test(value.replace(/[\u0000-\u0020]/g,'')))hits.push({tag:n.tag,attribute:key,value});break;case'path-traversal':match(/\.\.[/\\]/g);break;case'eval-calls':match(/\beval\s*\(/g);break;case'xxe':match(/<!ENTITY/gi);break;case'prototype-keys':match(/\b(?:__proto__|constructor|prototype)\b/g);break;case'sql-patterns':match(/\b(?:union\s+select|drop\s+table)\b/gi);break;default:throw Error('Regel unbekannt')}return {rule,passed:hits.length===0,hits}})}
+
+
+==============================================================================
+FILE: lib/library-recovery.mjs
+SHA256: d2a1ebbfc78ad632baa5d363a48ffb10d8fc9bf16ceb65de69178b0a02ec9360
+==============================================================================
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {validateLibrary} from './contract.mjs';
+
+// A corrupt current library must never silently become a new empty library.
+export function recoverLibrary(file, initial, warnings, atomic) {
+  const read = name => validateLibrary(JSON.parse(fs.readFileSync(name, 'utf8')));
+  if (!fs.existsSync(file)) {
+    const valid = validateLibrary(structuredClone(initial));
+    atomic(file, valid);
+    return valid;
+  }
+  try { return read(file); } catch (originalError) {
+    const dir = path.join(path.dirname(file), 'backups');
+    const backups = fs.existsSync(dir)
+      ? fs.readdirSync(dir).filter(name => /^\d+-[a-f0-9-]+\.json$/.test(name))
+          .sort((a,b) => Number(b.split('-')[0]) - Number(a.split('-')[0]))
+      : [];
+    let restored, source;
+    for (const name of backups) {
+      try { restored = read(path.join(dir, name)); source = name; break; }
+      catch (error) { warnings.push(`Backup ${name} ungültig: ${error.message}`); }
+    }
+    if (!restored) throw Error('Bibliothek beschädigt; kein gültiges Backup. Original unverändert: ' + originalError.message);
+    const preserved = file.replace(/\.json$/, '') + '.corrupt-' + Date.now() + '-' + crypto.randomUUID() + '.json';
+    fs.copyFileSync(file, preserved, fs.constants.COPYFILE_EXCL);
+    // Restoring old definitions is not authorization to run old commands.
+    restored.settings = {allowCommands: false};
+    atomic(file, restored);
+    warnings.push(`Bibliothek aus Backup ${source} wiederhergestellt. Beschädigtes Original: ${path.basename(preserved)}. Kommandoausführung deaktiviert; Definitionen vor Ausführung prüfen.`);
+    return restored;
+  }
+}
+
+
+==============================================================================
+FILE: lib/process-termination.mjs
+SHA256: 950789179cd3a0fc2e00f823364d44ef9e4e3ec29c1d4ed84113006bd6ca12f4
+==============================================================================
+import fs from 'node:fs';
+import {setTimeout as pause} from 'node:timers/promises';
+
+export function processIsRunning(pid) {
+  if (process.platform === 'linux') {
+    try {
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+      const state = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0];
+      return !['Z', 'X'].includes(state);
+    } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+  }
+  try { process.kill(pid, 0); return true; }
+  catch (error) { if (error.code === 'ESRCH') return false; throw error; }
+}
+
+function groupIsRunning(group) {
+  if (process.platform === 'linux') {
+    for (const name of fs.readdirSync('/proc')) {
+      if (!/^\d+$/.test(name)) continue;
+      try {
+        const stat = fs.readFileSync(`/proc/${name}/stat`, 'utf8');
+        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        if (Number(fields[2]) === group && !['Z', 'X'].includes(fields[0])) return true;
+      } catch (error) { if (!['ENOENT','ESRCH'].includes(error.code)) throw error; }
+    }
+    return false;
+  }
+  try { process.kill(-group, 0); return true; }
+  catch (error) { if (error.code === 'ESRCH') return false; throw error; }
+}
+
+export async function verifyPosixTermination(child, {timeoutMs = 2000} = {}) {
+  const deadline = performance.now() + timeoutMs;
+  do {
+    const parentExited = child.exitCode !== null || child.signalCode !== null;
+    if (parentExited && !groupIsRunning(child.pid)) return;
+    await pause(20);
+  } while (performance.now() < deadline);
+  throw Error('Beendigung der Worker-Prozessgruppe nicht bestätigt');
+}
 
 
 ==============================================================================
@@ -1217,8 +1375,11 @@ export function reviewResult(result,test,input){
 
 ==============================================================================
 FILE: lib/runner.mjs
-SHA256: b38748a0069724e677a73e2ba3e5045603723fea39722c9338dfdfc9e053b1ac
+SHA256: 632efd74299c26b88bf5e4fd127cdf297a88e43a8ba802784dc5fddf33f82060
 ==============================================================================
+import {StringDecoder} from 'node:string_decoder';
+import {recoverLibrary} from './library-recovery.mjs';
+import {verifyPosixTermination} from './process-termination.mjs';
 import {reviewResult} from './reviews.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -1228,35 +1389,41 @@ import {fileURLToPath} from 'node:url';
 import {VERSION,validateLibrary} from './contract.mjs';
 const here=path.dirname(fileURLToPath(import.meta.url));
 export const hash=x=>crypto.createHash('sha256').update(JSON.stringify(x)).digest('hex');
-export function engineIdentity(){const names=fs.readdirSync(here).filter(n=>n.endsWith('.mjs')).sort();return hash(names.map(n=>[n,fs.readFileSync(path.join(here,n),'utf8')]))}
+export function engineIdentity(root=path.dirname(here)){
+ const names=['package.json','server.mjs','cli.mjs'];
+ for(const dir of ['lib','public','resources'])for(const name of fs.readdirSync(path.join(root,dir)).sort()){
+   const relative=dir+'/'+name;if(fs.statSync(path.join(root,relative)).isFile()&&/\.(mjs|js|html|css|json)$/.test(name))names.push(relative);
+ }
+ return hash(names.sort().map(name=>[name,fs.readFileSync(path.join(root,name),'utf8')]));
+}
 export function atomic(file,value){fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=file+'.'+crypto.randomUUID()+'.tmp';fs.writeFileSync(tmp,JSON.stringify(value,null,2),'utf8');fs.renameSync(tmp,file)}
 export function aggregate(results){const states=results.map(r=>r.status);if(states.includes('running')||states.includes('queued'))return 'running';for(const s of ['cancelled','interrupted','error','timeout','failed','pending_manual','skipped'])if(states.includes(s))return s;return states.length&&states.every(s=>s==='passed')?'passed':'error'}
 export async function killTree(child){
  if(!child.pid)return;
  if(process.platform==='win32'){const exe=path.join(process.env.SystemRoot??'C:/Windows','System32','taskkill.exe');await new Promise((resolve,reject)=>{const p=spawn(exe,['/PID',String(child.pid),'/T','/F'],{windowsHide:true,stdio:['ignore','pipe','pipe']});let error='';p.stderr.on('data',b=>error+=b);p.on('error',reject);p.on('close',code=>{if(code!==0&&child.exitCode===null)reject(Error('Prozessbaum-Abbruch nicht bestätigt: '+error));else resolve()})})}
- else {try{process.kill(-child.pid,'SIGKILL')}catch(e){if(e.code!=='ESRCH')throw e}}
+ else {try{process.kill(-child.pid,'SIGKILL')}catch(e){if(e.code!=='ESRCH')throw e}await verifyPosixTermination(child)}
 }
-export async function runOne(test,project,settings,signal){
+export async function runOne(test,project,settings,signal,{terminate=killTree}={}){
  const startedAt=new Date().toISOString(),start=performance.now();
  if(test.enabled===false)return {testId:test.id,status:'skipped',reason:'Test deaktiviert',startedAt,durationMs:0,assertions:[],evidence:{}};
  if(signal?.aborted)return {testId:test.id,status:'cancelled',startedAt,durationMs:0,assertions:[],evidence:{}};
  if(test.type==='manual')return {testId:test.id,status:'pending_manual',startedAt,durationMs:0,assertions:[],evidence:{steps:test.config.steps,expected:test.config.expected}};
  return new Promise(resolve=>{
- const child=fork(path.join(here,'worker.mjs'),[],{stdio:['ignore','ignore','pipe','ipc'],windowsHide:true,detached:process.platform!=='win32'});let done=false,timer,stderr='';
- const finish=async(result,kill=false)=>{if(done)return;done=true;clearTimeout(timer);signal?.removeEventListener('abort',cancel);if(kill)try{await killTree(child);result.evidence={...result.evidence,termination:'process-tree-terminated'}}catch(e){result={status:'error',error:e.message,evidence:{requestedStatus:result.status,termination:'unverified'},assertions:[]}}resolve({testId:test.id,startedAt,finishedAt:new Date().toISOString(),durationMs:performance.now()-start,assertions:[],evidence:{},...result})};
+ const child=fork(path.join(here,'worker.mjs'),[],{stdio:['ignore','ignore','pipe','ipc'],windowsHide:true,detached:process.platform!=='win32'});let done=false,timer,stderr='';const stderrDecoder=new StringDecoder('utf8');
+ const finish=async(result,kill=false)=>{if(done)return;done=true;clearTimeout(timer);signal?.removeEventListener('abort',cancel);if(kill)try{await terminate(child);result.evidence={...result.evidence,termination:process.platform==='win32'?'process-tree-terminated':'process-group-terminated',terminationScope:process.platform==='win32'?'taskkill-tree':'worker-process-group; detached groups excluded'}}catch(e){result={status:'error',error:e.message,evidence:{requestedStatus:result.status,termination:'unverified'},assertions:[]}}resolve({testId:test.id,startedAt,finishedAt:new Date().toISOString(),durationMs:performance.now()-start,assertions:[],evidence:{},...result})};
  const cancel=()=>finish({status:'cancelled',reason:'Vom Nutzer abgebrochen'},true);
- child.stderr.on('data',b=>{stderr=(stderr+b).slice(-4000)});child.once('message',r=>finish(r,true));child.once('error',e=>finish({status:'error',error:e.message}));child.once('exit',(code,signalName)=>{if(!done)finish({status:'error',error:`Adapter ohne Ergebnis beendet (${code}/${signalName})`,evidence:{stderr}})});
- timer=setTimeout(()=>finish({status:'timeout',reason:`Zeitlimit ${test.timeoutMs} ms überschritten`},true),test.timeoutMs);signal?.addEventListener('abort',cancel,{once:true});if(signal?.aborted)cancel();else child.send({test,project,settings});
+ child.stderr.on('data',b=>{stderr=(stderr+stderrDecoder.write(b)).slice(-4000)});child.once('message',r=>finish(r,true));child.once('error',e=>finish({status:'error',error:e.message}));child.once('exit',(code,signalName)=>{if(!done)finish({status:'error',error:`Adapter ohne Ergebnis beendet (${code}/${signalName})`,evidence:{stderr}})});
+ timer=setTimeout(()=>finish({status:'timeout',reason:`Zeitlimit ${test.timeoutMs} ms überschritten`},true),test.timeoutMs);signal?.addEventListener('abort',cancel,{once:true});if(signal?.aborted)cancel();else try{child.send({test,project,settings},error=>{if(error)void finish({status:'error',error:error.message},true)})}catch(error){void finish({status:'error',error:error.message},true)};
  });
 }
 export class Store{
- constructor(dir,initial){this.dir=dir;fs.mkdirSync(path.join(dir,'runs'),{recursive:true});this.libraryFile=path.join(dir,'library.json');this.warnings=[];if(!fs.existsSync(this.libraryFile))atomic(this.libraryFile,initial);this.library=validateLibrary(JSON.parse(fs.readFileSync(this.libraryFile,'utf8')));this.runs=new Map();for(const name of fs.readdirSync(path.join(dir,'runs'))){if(!name.endsWith('.json'))continue;try{const run=JSON.parse(fs.readFileSync(path.join(dir,'runs',name),'utf8'));if(!Array.isArray(run.results)||!run.id)throw Error('Ungültiger Lauf');if(run.status==='running'){for(const r of run.results)if(['running','queued'].includes(r.status)){r.status='interrupted';r.reason='Dienst während Lauf beendet'}run.status=aggregate(run.results);run.finishedAt=new Date().toISOString();this.saveRun(run)}this.runs.set(run.id,run)}catch(e){this.warnings.push(`${name}: ${e.message}`)}}}
+ constructor(dir,initial){this.dir=dir;fs.mkdirSync(path.join(dir,'runs'),{recursive:true});this.libraryFile=path.join(dir,'library.json');this.warnings=[];this.library=recoverLibrary(this.libraryFile,initial,this.warnings,atomic);this.runs=new Map();for(const name of fs.readdirSync(path.join(dir,'runs'))){if(!name.endsWith('.json'))continue;try{const run=JSON.parse(fs.readFileSync(path.join(dir,'runs',name),'utf8'));if(!Array.isArray(run.results)||!run.id)throw Error('Ungültiger Lauf');if(run.status==='running'){for(const r of run.results)if(['running','queued'].includes(r.status)){r.status='interrupted';r.reason='Dienst während Lauf beendet'}run.status=aggregate(run.results);run.finishedAt=new Date().toISOString();this.saveRun(run)}this.runs.set(run.id,run)}catch(e){this.warnings.push(`${name}: ${e.message}`)}}}
  saveLibrary(library){validateLibrary(library);const backup=path.join(this.dir,'backups',Date.now()+'-'+crypto.randomUUID()+'.json');atomic(backup,this.library);atomic(this.libraryFile,library);this.library=structuredClone(library)}
  saveRun(run){atomic(path.join(this.dir,'runs',run.id+'.json'),run);this.runs?.set(run.id,run)}
  listRuns(){return [...this.runs.values()].sort((a,b)=>b.startedAt.localeCompare(a.startedAt)).map(({results,definition,...r})=>({...r,summary:results.reduce((a,r)=>(a[r.status]=(a[r.status]??0)+1,a),{})}))}
 }
 export class Runner{
- constructor(store){this.store=store;this.active=null;this.engineHash=engineIdentity()}
+ constructor(store,{executeOne=runOne}={}){this.store=store;this.executeOne=executeOne;this.active=null;this.engineHash=engineIdentity()}
  start({testIds,suiteId,repeat=1,stopOnFailure=false,requestId}){
  const requestHash=hash({testIds,suiteId,repeat,stopOnFailure});
  if(requestId){const previous=[...this.store.runs.values()].find(r=>r.requestId===requestId);if(previous){if(previous.requestHash!==requestHash)throw Error('requestId wurde bereits für eine andere Anforderung verwendet');return previous}}
@@ -1271,12 +1438,12 @@ export class Runner{
  for(let i=1;i<=repeat;i++)for(const t of definition.tests)run.results.push({testId:t.id,iteration:i,status:'queued',assertions:[],evidence:{}});
  this.store.saveRun(run);const controller=new AbortController();this.active={id:run.id,controller};this.completion=this.execute(run,controller).finally(()=>{this.active=null});return run;
  }
- async execute(run,controller){let stopped=false;try{for(let i=0;i<run.results.length;i++){const slot=run.results[i];if(controller.signal.aborted||stopped){slot.status=controller.signal.aborted?'cancelled':'skipped';slot.reason=controller.signal.aborted?'Lauf abgebrochen':'Testplan nach Fehler gestoppt';this.store.saveRun(run);continue}slot.status='running';this.store.saveRun(run);const test=run.definition.tests.find(t=>t.id===slot.testId),project=run.definition.projects.find(p=>p.id===test.projectId);const result=await runOne(test,project,run.definition.settings,controller.signal);run.results[i]={...result,iteration:slot.iteration};if(run.definition.stopOnFailure&&['failed','error','timeout'].includes(result.status))stopped=true;this.store.saveRun(run)}run.status=aggregate(run.results)}catch(e){run.status='error';run.error=e.message;for(const r of run.results)if(['running','queued'].includes(r.status)){r.status='error';r.error='Lauf-Infrastrukturfehler'}}run.finishedAt=new Date().toISOString();this.store.saveRun(run);return run}
+ async execute(run,controller){let stopped=false;try{for(let i=0;i<run.results.length;i++){const slot=run.results[i];if(controller.signal.aborted||stopped){slot.status=controller.signal.aborted?'cancelled':'skipped';slot.reason=controller.signal.aborted?'Lauf abgebrochen':'Testplan nach Fehler gestoppt';this.store.saveRun(run);continue}slot.status='running';this.store.saveRun(run);const test=run.definition.tests.find(t=>t.id===slot.testId),project=run.definition.projects.find(p=>p.id===test.projectId);let result;try{result=await this.executeOne(test,project,run.definition.settings,controller.signal)}catch(error){result={testId:test.id,status:'error',error:error.message,assertions:[],evidence:{failureScope:'adapter-invocation'}}}run.results[i]={...result,iteration:slot.iteration};if(run.definition.stopOnFailure&&['failed','error','timeout'].includes(result.status))stopped=true;this.store.saveRun(run)}run.status=aggregate(run.results)}catch(e){run.status='error';run.error=e.message;for(const r of run.results)if(['running','queued'].includes(r.status)){r.status='error';r.error='Lauf-Infrastrukturfehler'}}run.finishedAt=new Date().toISOString();this.store.saveRun(run);return run}
  cancel(id){if(this.active?.id!==id)throw Error('Lauf ist nicht aktiv');this.active.controller.abort()}
  manual(runId,index,input){const run=this.store.runs.get(runId);if(!run)throw Error('Lauf fehlt');if(run.status==='running')throw Error('Automatische Ausführung zuerst abschließen');const result=run.results[index];if(!result||result.status!=='pending_manual')throw Error('Keine offene manuelle Prüfung');reviewResult(result,run.definition.tests.find(t=>t.id===result.testId),input);run.status=aggregate(run.results);this.store.saveRun(run);return run}
 }
 const xml=s=>String(s??'').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[c]));
-const csv=s=>'"'+String(s??'').replace(/^[=+@-]/,"'$&").replace(/"/g,'""')+'"';
+const csv=s=>'"'+String(s??'').replace(/^(?:[\t\r\n]|\s*[=+@-])/u,match=>"'"+match).replace(/"/g,'""')+'"';
 export function exportRun(run,format){
  if(format==='json')return JSON.stringify(run,null,2);
  if(format==='csv')return ['testId,iteration,status,durationMs,details',...run.results.map(r=>[r.testId,r.iteration,r.status,r.durationMs,r.error??r.reason??JSON.stringify(r.assertions)].map(csv).join(','))].join('\r\n');
@@ -1322,7 +1489,7 @@ export function acquireLock(dir){
 
 ==============================================================================
 FILE: lib/source-bundle.mjs
-SHA256: 2de6cbced2b605677e7237066973e719e43f121af5173d8242988ecf3aa3f299
+SHA256: b97bfa6db6986a52fdca5d6163de16df1ec9f073a554b14c8ff1295709ea1396
 ==============================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -1331,7 +1498,7 @@ export function sourceFiles(root){
  const names=['package.json','server.mjs','cli.mjs','README.md','CONTRACT.md','VERIFICATION.md','.gitignore','.gitattributes','.github/workflows/test.yml','Start-Evaluator.cmd','Stop-Evaluator.cmd','Start-Evaluator.ps1','Stop-Evaluator.ps1'];
  const walk=dir=>{for(const e of fs.readdirSync(path.join(root,dir),{withFileTypes:true})){const n=dir+'/'+e.name;if(e.isDirectory())walk(n);else if(/\.(mjs|js|html|css|json|md|txt|csv)$/.test(e.name))names.push(n)}};
  for(const dir of ['lib','public','resources','tests','examples'])walk(dir);
- for(const n of ['verify.mjs','export-examples.mjs','package.mjs'])names.push('tools/'+n);
+ for(const n of ['verify.mjs','export-examples.mjs','package.mjs','verify-package.ps1'])names.push('tools/'+n);
  return names.filter(n=>fs.existsSync(path.join(root,n))).sort().map(name=>{const data=fs.readFileSync(path.join(root,name));return {name,data,sha256:crypto.createHash('sha256').update(data).digest('hex')}});
 }
 export function sourceText(root){const files=sourceFiles(root);return 'Evaluator – Inspector · vollständiger Produktquelltext\nDateien: '+files.length+'\nUTF-8 · Quelldateien mit relativen Pfaden; keine Nutzerdaten oder gespeicherten Läufe.\n\n'+files.map(f=>'='.repeat(78)+'\nFILE: '+f.name+'\nSHA256: '+f.sha256+'\n'+'='.repeat(78)+'\n'+f.data.toString('utf8')).join('\n\n')}
@@ -1368,28 +1535,52 @@ SHA256: 35eb9f86370e601e6bf48663825ed817d1fe663150e39cbdf77e7c595f0d18cd
 
 ==============================================================================
 FILE: public/app.js
-SHA256: 3bde9b71c9e6d1526fd7befa63c951509e586821e02889a556149bc13f1e2f23
+SHA256: 2c19fb44cf6731f8473cc0efe346f0e5898315de160f5af544a9566f54563ae0
 ==============================================================================
+import {readApiResponse,shouldRefreshView,preserveView} from './ui-state.js';
 import {renderQuick} from './quick-menu.js';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const names={overview:'Übersicht',quick:'Schnellmenü',tests:'Testkatalog',suites:'Testpläne',files:'Dateien & Abdeckung',runs:'Läufe & Auswertung',settings:'Projekte & Einstellungen'};
 const statuses={passed:'Bestanden',failed:'Nicht bestanden',error:'Ausführungsfehler',timeout:'Zeitlimit',cancelled:'Abgebrochen',interrupted:'Unterbrochen',pending_manual:'Manuell offen',skipped:'Übersprungen',queued:'Geplant',running:'Läuft',untested:'Nicht geprüft',stale:'Veraltet',incomplete:'Unvollständig'};
 const typeNames={file:'Datei & Integrität',text:'Text & Logs',json:'JSON-Vertrag',csv:'CSV & Datenqualität',compare:'Referenzvergleich',http:'HTTP & API',command:'Programm / Framework',manual:'Manuelle Prüfung'};
 const hints={file:'Existenz, Dateityp, Größe und SHA256. Pfade relativ zum Projektordner.',text:'UTF-8-Dateien: Pflichtinhalte, verbotene Inhalte und Zeilenzahl. includes / excludes sind exakte Zeichenfolgen.',json:'JSON-Pointer wie /users/0/name. Operatoren: eq, ne, contains, gt, gte, lt, lte, exists, type.',csv:'UTF-8 mit Header. Regeln prüfen jede Datenzeile; numerische Sollwerte werden numerisch verglichen. unique prüft je Spalte.',compare:'Vergleich zweier Dateien: bytes, text (CRLF normalisiert) oder json (semantisch).',http:'Erwartete Statuscodes, Inhalt, JSON-Prüfregeln und maximale Antwortdauer. Redirects werden nicht automatisch verfolgt. Schreibende HTTP-Methoden wirken auf das Ziel.',command:'Absoluter Programmpfad plus Argumentliste, ohne Shell-Auswertung. pytest, Playwright, dotnet test, Scanner und eigene Werkzeuge sind so anschließbar. Exitcodes und stdout werden geprüft. Ausführung muss in Einstellungen aktiviert sein.',manual:'Bleibt nach dem Lauf offen. Für ein Urteil sind Prüfer, Beobachtung und Nachweisreferenz erforderlich.'};
-let state,view='overview',selected=new Set(),currentRun=null,fileData=null,editingId=null,toastTimer;
+let state,view='overview',selected=new Set(),currentRun=null,fileData=null,editingId=null,toastTimer,conflictDraft=null,conflictRequest=null,conflictPanel=null;
 const badge=s=>`<span class="badge ${esc(s)}">${esc(statuses[s]??s)}</span>`;
-const date=s=>new Date(s).toLocaleString('de-CH',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+const date=s=>new Date(s).toLocaleString('de-CH',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 const duration=n=>n===undefined?'—':n<1000?Math.round(n)+' ms':(n/1000).toFixed(2)+' s';
 function toast(message,error=false){$('#toast').hidden=false;$('#toast').textContent=message;$('#toast').className=error?'error-toast':'';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,6000)}
-async function api(url,method='GET',body){const response=await fetch('/api'+url,{method,headers:{'Content-Type':'application/json','X-Cockpit-Token':state?.token??'','If-Match':state?.libraryRevision??''},body:body===undefined?undefined:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw Error(data.error??'Anfrage fehlgeschlagen');return data}
-async function save(library){adopt(await api('/library','PUT',library));$('#testCount').textContent=library.tests.length;render()}
+async function api(url,method='GET',body){const response=await fetch('/api'+url,{method,headers:{'Content-Type':'application/json','X-Cockpit-Token':state?.token??'','If-Match':state?.libraryRevision??''},body:body===undefined?undefined:JSON.stringify(body)});try{return await readApiResponse(response)}catch(error){if(error.code==='LIBRARY_CONFLICT'){conflictRequest={url,method,body:structuredClone(body)};showConflict()}throw error}}
+async function save(library){
+ try{adopt(await api('/library','PUT',library));$('#testCount').textContent=library.tests.length;conflictDraft=null;conflictRequest=null;conflictPanel=null;$('#libraryConflict')?.remove();render()}
+ catch(error){if(error.code==='LIBRARY_CONFLICT'){conflictDraft=structuredClone(library);showConflict()}throw error}
+}
+function conflictHost(){return $('#editor').open?$('#editor'):$('#generic').open?$('#generic'):$('#content')}
+function showConflict(){
+ let panel=$('#libraryConflict')??conflictPanel;
+ if(!panel){panel=document.createElement('section');panel.id='libraryConflict';panel.className='panel panel-body';panel.setAttribute('role','alert');
+ panel.innerHTML='<strong>Bibliothek wurde in einer anderen Sitzung geändert.</strong><p>Dein Entwurf bleibt offen. Sichere ihn und lade danach den aktuellen Stand. Änderungen werden nicht automatisch überschrieben.</p><button type="button" class="secondary" id="exportConflict">Entwurf herunterladen</button> <button type="button" class="primary" id="reloadConflict" disabled>Aktuellen Stand laden</button>';
+ }
+ conflictPanel=panel;conflictHost().prepend(panel);$('#reloadConflict').disabled=true;
+ $('#exportConflict').onclick=()=>{
+   const fields=[...document.querySelectorAll('dialog[open] input,dialog[open] textarea,dialog[open] select')].filter(node=>node.type!=='file').map(node=>({id:node.id,name:node.name,value:node.value,checked:node.checked}));
+   download('evaluator-inspector-entwurf.json',JSON.stringify({format:'evaluator-inspector-conflict-draft',library:conflictDraft??state.library,request:conflictRequest,fields},null,2));
+   $('#reloadConflict').disabled=false;
+ };
+ $('#reloadConflict').onclick=guard(async()=>{const latest=await api('/bootstrap');adopt(latest);state.runs=latest.runs;state.active=latest.active;if(latest.warnings)state.warnings=latest.warnings;selected.clear();fileData=null;conflictDraft=null;conflictRequest=null;conflictPanel=null;panel.remove();$('#editor').close();$('#generic').close();render();toast('Aktueller Stand geladen. Gesicherten Entwurf gezielt übertragen.')});
+}
+for(const dialog of [$('#editor'),$('#generic')])dialog.addEventListener('close',()=>{if(conflictPanel)conflictHost().prepend(conflictPanel)});
+document.addEventListener('input',()=>{if($('#reloadConflict'))$('#reloadConflict').disabled=true});
+function updateActivity(){
+ $('#activity').textContent=state.active?'Testlauf aktiv':'Bereit für Prüfungen';$('#activity').className='activity'+(state.active?' busy':'');
+ for(const button of document.querySelectorAll('[data-start],[data-suite-run],[data-action="run-selected"]'))button.disabled=!!state.active||(button.dataset.action==='run-selected'&&!selected.size);
+}
 function head(title,subtitle,buttons='',eyebrow='TEST-Cockpit'){return `<div class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p class="subtitle">${subtitle}</p></div><div class="actions">${buttons}</div></div>`}
 function adopt(data){state.library=data.library;state.libraryRevision=data.libraryRevision;state.gates=data.gates??state.gates}
 function show(next){view=next;currentRun=null;location.hash=next;render();window.scrollTo(0,0)}
-function render(){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('#breadcrumb').textContent=names[view];$('#activity').textContent=state.active?'Testlauf aktiv':'Bereit für Prüfungen';$('#activity').className='activity'+(state.active?' busy':'');$('#testCount').textContent=state.library.tests.length;({overview,quick:()=>renderQuick({state,api,adopt,show,generic,toast,esc}),tests,suites,files,runs,settings}[view]??overview)()}
+function render(){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('#breadcrumb').textContent=names[view];$('#activity').textContent=state.active?'Testlauf aktiv':'Bereit für Prüfungen';$('#activity').className='activity'+(state.active?' busy':'');$('#testCount').textContent=state.library.tests.length;({overview,quick:()=>renderQuick({state,api,adopt,show,generic,toast,esc}),tests,suites,files,runs,settings}[view]??overview)();if(conflictPanel&&!conflictPanel.isConnected)conflictHost().prepend(conflictPanel)}
 function overview(){const {library,runs}=state,last=runs[0],counts=last?.summary??{},passed=counts.passed??0,total=Object.values(counts).reduce((a,b)=>a+b,0),types=new Set(library.tests.map(t=>t.type));$('#content').innerHTML=head('Qualität beginnt mit klaren Tests.','Definiere, was stimmen muss. Prüfe gezielt. Behalte jeden Befund und seinen Nachweis.',`<button class="secondary" data-action="import">Bibliothek importieren</button><button class="primary" data-action="new">＋ Test erstellen</button>`,'DEIN PRÜFARBEITSPLATZ')+`<div class="metrics"><div class="metric"><small>DEFINIERTE TESTS</small><strong>${library.tests.length}</strong><span>${types.size} von ${state.types.length} Adaptern im Katalog</span></div><div class="metric"><small>TESTPLÄNE</small><strong>${library.suites.length}</strong><span>Für wiederholbare Prüfabläufe</span></div><div class="metric"><small>LETZTER LAUF</small><strong class="green">${last?passed+' / '+total:'—'}</strong><span>${last?'Prüfungen bestanden':'Noch keine Ausführung'}</span></div><div class="metric"><small>GESPEICHERTE LÄUFE</small><strong>${runs.length}</strong><span>Mit Definitionen & Nachweisen</span></div></div><div class="split"><div><div class="panel"><div class="panel-head"><div><h2>Letzte Testläufe</h2><p>Ergebnisse bleiben mit ihrer ursprünglichen Definition verbunden.</p></div><button class="text-button" data-view="runs">Alle anzeigen →</button></div>${runTable(runs.slice(0,4))}</div><div class="panel"><div class="panel-head"><div><h2>Ein Cockpit. Unterschiedliche Prüfungen.</h2><p>Direkte Adapter und Anschluss für deine vorhandenen Testwerkzeuge.</p></div></div><div class="panel-body capabilities">${Object.entries(typeNames).map(([k,v],i)=>`<div class="capability"><b>${(['▧','Aa','{}','▦','⇄','↗','>_','✓'][i]??k.slice(0,2))}</b>${v}</div>`).join('')}</div></div></div><div><div class="panel"><div class="panel-head"><h2>Von der Frage zum Nachweis</h2></div><div class="panel-body steps">${[['Projekt festlegen','Lokalen Ordner als Prüfbereich registrieren.'],['Testzweck & Sollwert definieren','Adapter auswählen und konkrete Regeln speichern.'],['Gezielt ausführen','Einzeltests, Auswahl oder einen Testplan starten.'],['Ergebnisse nachvollziehen','Istwerte, Fehler, Dauer und Historie auswerten.']].map(([a,b],i)=>`<div class="step"><b>${i+1}</b><div><strong>${a}</strong><p>${b}</p></div></div>`).join('')}</div></div><div class="callout"><strong>Du definierst die Prüfung.</strong>Menschen und externe KI können dieselben JSON-Testdefinitionen liefern. Das Cockpit führt ausschließlich die festgelegten Regeln aus.</div></div></div>`}
 function runTable(list){if(!list.length)return '<div class="empty"><b>Noch keine Testläufe</b>Starte einen Test oder den mitgelieferten Beispielplan.</div>';return `<div class="table-scroll"><table><thead><tr><th>Testlauf</th><th>Zeitpunkt</th><th>Ergebnis</th><th></th></tr></thead><tbody>${list.map(r=>`<tr><td><strong>${esc(r.name)}</strong><small>${esc(r.id.slice(0,8))} · ${Object.values(r.summary).reduce((a,b)=>a+b,0)} Prüfungen</small></td><td>${date(r.startedAt)}</td><td>${badge(r.status)}</td><td><button class="text-button" data-run="${r.id}">Öffnen →</button></td></tr>`).join('')}</tbody></table></div>`}
-function tests(){const filter=$('#search')?.value??'',type=$('#typeFilter')?.value??'',cat=$('#categoryFilter')?.value??'';$('#content').innerHTML=head('Testkatalog','Jeder Test hat einen Zweck, einen Prüfadapter und überprüfbare Sollwerte.',`<button class="secondary" data-action="export-library">Exportieren</button><button class="primary" data-action="new">＋ Test erstellen</button>`)+`<div class="toolbar"><input id="search" placeholder="Tests durchsuchen …" aria-label="Tests durchsuchen" value="${esc(filter)}"><select id="typeFilter" aria-label="Adapter filtern"><option value="">Alle Adapter</option>${Object.entries(typeNames).map(([k,v])=>`<option value="${k}" ${type===k?'selected':''}>${v}</option>`).join('')}</select><select id="categoryFilter" aria-label="Kategorie filtern"><option value="">Alle Kategorien</option>${[...new Set(state.library.tests.map(t=>t.category))].map(c=>`<option ${cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div><div class="panel"><div class="panel-head"><div class="actions"><button class="primary" data-action="run-selected" ${state.active?'disabled':''}>▷ Auswahl ausführen</button><button class="secondary" data-action="suite-selected">Als Testplan speichern</button><label>Wiederholungen <input id="repeat" type="number" min="1" max="100" value="1" class="inline-number"></label></div><span class="count-label" id="selectedCount">${selected.size} ausgewählt</span></div><div class="table-scroll"><table><thead><tr><th><input type="checkbox" id="selectAll" aria-label="Sichtbare Tests auswählen"></th><th>Test / Zweck</th><th>Adapter</th><th>Kategorie</th><th>Status</th><th>Aktionen</th></tr></thead><tbody id="testRows"></tbody></table></div></div><p class="hint">Wiederholungen sind ausdrücklich geplante Ausführungen. Fehlschläge werden nicht automatisch verdeckt oder erneut versucht.</p>`;testRows()}
+function tests(){const filter=$('#search')?.value??'',type=$('#typeFilter')?.value??'',cat=$('#categoryFilter')?.value??'';$('#content').innerHTML=head('Testkatalog','Jeder Test hat einen Zweck, einen Prüfadapter und überprüfbare Sollwerte.',`<button class="secondary" data-action="export-library">Exportieren</button><button class="primary" data-action="new">＋ Test erstellen</button>`)+`<div class="toolbar"><input id="search" placeholder="Tests durchsuchen …" aria-label="Tests durchsuchen" value="${esc(filter)}"><select id="typeFilter" aria-label="Adapter filtern"><option value="">Alle Adapter</option>${Object.entries(typeNames).map(([k,v])=>`<option value="${k}" ${type===k?'selected':''}>${v}</option>`).join('')}</select><select id="categoryFilter" aria-label="Kategorie filtern"><option value="">Alle Kategorien</option>${[...new Set(state.library.tests.map(t=>t.category))].map(c=>`<option ${cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div><div class="panel"><div class="panel-head"><div class="actions"><button class="primary" data-action="run-selected" ${state.active||!selected.size?'disabled':''}>▷ Auswahl ausführen</button><button class="secondary" data-action="suite-selected">Als Testplan speichern</button><label>Wiederholungen <input id="repeat" type="number" min="1" max="100" value="1" class="inline-number"></label></div><span class="count-label" id="selectedCount">${selected.size} ausgewählt</span></div><div class="table-scroll"><table><thead><tr><th><input type="checkbox" id="selectAll" aria-label="Sichtbare Tests auswählen"></th><th>Test / Zweck</th><th>Adapter</th><th>Kategorie</th><th>Status</th><th>Aktionen</th></tr></thead><tbody id="testRows"></tbody></table></div></div><p class="hint">Wiederholungen sind ausdrücklich geplante Ausführungen. Fehlschläge werden nicht automatisch verdeckt oder erneut versucht.</p>`;testRows()}
 function visibleTests(){const q=($('#search')?.value??'').toLowerCase(),type=$('#typeFilter')?.value,cat=$('#categoryFilter')?.value;return state.library.tests.filter(t=>(!type||t.type===type)&&(!cat||t.category===cat)&&[t.name,t.purpose,t.id,...t.tags??[]].join(' ').toLowerCase().includes(q))}
 function testRows(){const ts=visibleTests();$('#testRows').innerHTML=ts.map(t=>`<tr><td><input type="checkbox" data-select="${t.id}" ${selected.has(t.id)?'checked':''} aria-label="${esc(t.name)} auswählen"></td><td><strong>${esc(t.name)}</strong><small>${esc(t.purpose)}</small><small class="mono">${esc(t.id)} · ${esc(t.projectId)}</small></td><td><span class="type">${esc(t.type.toUpperCase())}</span></td><td>${esc(t.category)}</td><td><span class="badge">${t.enabled===false?'Deaktiviert':'Definiert'}</span></td><td><div class="actions"><button class="secondary" data-edit="${t.id}">Bearbeiten</button><button class="primary" data-start="${t.id}" ${state.active?'disabled':''}>▷</button><button class="secondary" data-duplicate="${t.id}" title="Duplizieren">⧉</button><button class="danger" data-delete="${t.id}" title="Entfernen">×</button></div></td></tr>`).join('')||'<tr><td colspan="6" class="empty">Keine Tests für diesen Filter.</td></tr>'}
 function suites(){$('#content').innerHTML=head('Testpläne','Stelle aus vorhandenen Tests wiederholbare Prüfabläufe zusammen.',`<button class="primary" data-action="new-suite">＋ Testplan erstellen</button>`)+`<div class="suite-grid">${state.library.suites.map(s=>`<div class="suite-card"><div class="eyebrow">TESTPLAN · ${s.testIds.length} TESTS</div><h2>${esc(s.name)}</h2><p>${s.testIds.map(id=>esc(state.library.tests.find(t=>t.id===id)?.name)).join(' · ')}</p><span class="badge">${s.stopOnFailure?'Stoppt nach Fehler':'Führt alle Tests aus'}</span> ${badge(state.gates?.[s.id]?.status??'untested')}<p class="hint">${esc(state.gates?.[s.id]?.reason??'Noch kein vollständiger Testplanlauf')}</p><div class="actions"><button class="primary" data-suite-run="${s.id}" ${state.active?'disabled':''}>▷ Testplan ausführen</button><button class="secondary" data-suite-edit="${s.id}">Bearbeiten</button><button class="danger" data-suite-delete="${s.id}">Entfernen</button></div></div>`).join('')||'<div class="empty"><b>Noch kein Testplan</b>Wähle Tests aus dem Katalog oder erstelle hier einen Plan.</div>'}</div>`}
@@ -1398,8 +1589,8 @@ function fileRows(){if(!fileData||fileData.projectId!==$('#fileProject').value){
 function runs(){if(currentRun){runDetail();return}const list=state.runs;$('#content').innerHTML=head('Läufe & Auswertung','Ergebniszustände, Prüfregeln und Nachweise jedes Laufs bleiben erhalten.')+`<div class="panel"><div class="panel-head"><h2>Verlauf der letzten ${Math.min(list.length,20)} Läufe</h2><span class="count-label">Säulenhöhe: Anzahl Prüfungen</span></div><div class="panel-body"><div class="trend">${list.slice(0,20).reverse().map(r=>`<button data-run="${r.id}" class="${r.status==='passed'?'':r.status==='pending_manual'?'open':'bad'}" style="height:80%" title="${esc(date(r.startedAt)+' · '+statuses[r.status])}">${Object.values(r.summary).reduce((a,b)=>a+b,0)}</button>`).join('')}</div><div class="trend-label"><span>Älter</span><span>Neuester Lauf →</span></div></div></div><div class="panel">${runTable(list)}</div>`;const bars=$('.trend')?.children??[],max=Math.max(1,...list.slice(0,20).map(r=>Object.values(r.summary).reduce((a,b)=>a+b,0)));[...bars].forEach((b,i)=>b.style.height=Math.max(20,Object.values(list.slice(0,20).reverse()[i].summary).reduce((a,b)=>a+b,0)/max*100)+'%')}
 function runDetail(){const r=currentRun;$('#content').innerHTML=head(esc(r.name),`${date(r.startedAt)} · ${r.id}`,`<button class="secondary" data-action="back-runs">← Alle Läufe</button>${state.active===r.id?`<button class="danger" data-cancel="${r.id}">Lauf abbrechen</button>`:''}`)+`<div class="panel"><div class="panel-head"><div class="actions">${badge(r.status)}<span class="count-label">${r.results.length} Prüfungen · Definition ${r.definitionHash.slice(0,12)}</span></div><div class="actions">${['json','csv','junit'].map(f=>`<button class="secondary" data-export="${f}">${f.toUpperCase()} ↓</button>`).join('')}</div></div><div class="panel-body"><div class="toolbar"><label>Mit vorherigem Lauf vergleichen<select id="compareRun"><option value="">Vergleichslauf wählen</option>${state.runs.filter(x=>x.id!==r.id&&x.status!=='running').map(x=>`<option value="${x.id}">${date(x.startedAt)} · ${esc(x.name)}</option>`).join('')}</select></label></div><div id="comparison"></div><p class="hint">Engine ${r.engineVersion} · Quellidentität ${r.engineHash.slice(0,16)} · ${r.finishedAt?'Beendet '+date(r.finishedAt):'Ausführung läuft'}</p>${r.error?`<p class="error">${esc(r.error)}</p>`:''}${r.results.map((result,i)=>{const t=r.definition.tests.find(t=>t.id===result.testId);return `<details class="run-result" ${['failed','error','timeout','pending_manual'].includes(result.status)?'open':''}><summary><strong>${esc(t.name)}</strong><span class="note">#${result.iteration} · ${duration(result.durationMs)}</span>${badge(result.status)}</summary><div class="result-body"><p class="note">${esc(t.purpose)}</p><p class="hint"><strong>Umgebung:</strong> ${esc(r.definition.projects.find(p=>p.id===t.projectId)?.target??t.projectId)} · <strong>Kandidat:</strong> ${esc(r.definition.projects.find(p=>p.id===t.projectId)?.candidate??'Nicht deklariert')}</p>${t.oracle?`<p class="note"><strong>Sollkriterium:</strong> ${esc(t.oracle)}</p>`:''}${t.counterexamples?`<p class="note"><strong>Gegenfälle:</strong> ${esc(t.counterexamples)}</p>`:''}${t.scope?`<p class="hint"><strong>Aussagegrenze:</strong> ${esc(t.scope)}</p>`:''}${result.error||result.reason?`<p class="error">${esc(result.error??result.reason)}</p>`:''}${(result.assertions??[]).map(a=>`<div class="assertion"><strong>${a.passed?'✓':'×'}</strong>${esc(a.label)}<small>Ist: ${esc(JSON.stringify(a.actual))}<br>Soll: ${esc(JSON.stringify(a.expected))}</small></div>`).join('')}${result.status==='pending_manual'?`<ol>${t.config.steps.map(s=>`<li>${esc(typeof s==='string'?s:s.label+' · '+(result.evidence.steps?.find(x=>x.id===s.id)?.status??'pending'))}</li>`).join('')}</ol><p>Soll: ${esc(t.config.expected??t.oracle??'Alle Pflichtschritte mit Nachweisen abschließen')}</p><button class="primary" data-manual="${i}">Manuelles Urteil erfassen</button>`:''}<details><summary>Nachweise & Messwerte</summary><pre>${esc(JSON.stringify(result.evidence,null,2))}</pre></details><details><summary>Ausgeführte Testdefinition</summary><pre>${esc(JSON.stringify(t,null,2))}</pre></details></div></details>`}).join('')}</div></div>`}
 function settings(){$('#content').innerHTML=head('Projekte & Einstellungen','Projektordner bestimmen den Bereich für Datei- und Datenprüfungen.',`<button class="primary" data-action="new-project">＋ Projekt hinzufügen</button>`)+`<div class="panel"><div class="panel-head"><h2>Registrierte Projekte</h2></div><table><thead><tr><th>Projekt</th><th>Lokaler Ordner</th><th></th></tr></thead><tbody>${state.library.projects.map(p=>`<tr><td><strong>${esc(p.name)}</strong><small>${p.id}</small></td><td class="file-path">${esc(p.root)}<small>Ziel: ${esc(p.target??'Noch nicht deklariert')} · Kandidat: ${esc(p.candidate??'Noch nicht deklariert')}</small></td><td><button class="secondary" data-project="${p.id}">Bearbeiten</button></td></tr>`).join('')}</tbody></table></div><div class="panel"><div class="panel-head"><h2>Externe Testprogramme</h2></div><div class="panel-body"><label class="check"><input id="allowCommands" type="checkbox" ${state.library.settings?.allowCommands?'checked':''}> Ausführung lokaler Programme erlauben</label><p class="hint">Programmtests führen die angegebene ausführbare Datei mit ihrer Argumentliste aus. Programme arbeiten mit deinen lokalen Benutzerrechten und können Dateien oder Dienste verändern. Prüfe importierte Befehle vor dem Start.</p></div></div><div class="panel"><div class="panel-head"><h2>Schnittstelle für Nutzer und externe KI</h2></div><div class="panel-body"><p class="note">Versionierte JSON-Bibliotheken enthalten Projekte, Tests und Testpläne. Importierte Definitionen werden vor der Übernahme validiert. Die Ausführung benötigt keine KI.</p><div class="actions"><button class="secondary" data-action="export-library">Bibliothek exportieren</button><button class="secondary" data-action="import">Bibliothek importieren</button><button class="secondary" data-action="api-help">API & CLI anzeigen</button><button class="secondary" data-action="source-code">Kompletter Code (.txt)</button></div><p class="hint">Bibliotheksänderungen erhalten eine lokale Sicherung. Laufnachweise liegen in .data/runs; Projektdateien werden vom Cockpit nicht bearbeitet.</p></div></div>${state.warnings.length?`<div class="warning">Historienwarnungen: ${esc(state.warnings.join('; '))}</div>`:''}`}
-function editor(test=null,{file,projectId,duplicate=false}={}){editingId=duplicate?null:test?.id??null;$('#editorTitle').textContent=editingId?'Test bearbeiten':'Test erstellen';$('#tType').innerHTML=Object.entries(typeNames).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');$('#tProject').innerHTML=state.library.projects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');$('#categories').innerHTML=state.categories.map(c=>`<option value="${esc(c)}">`).join('');$('#tId').value=duplicate?test.id+'-copy':test?.id??'test-'+crypto.randomUUID().slice(0,8);$('#tId').readOnly=!!editingId;$('#tName').value=duplicate?test.name+' (Kopie)':test?.name??(file?'Datei prüfen: '+file:'');$('#tPurpose').value=test?.purpose??'';$('#tType').value=test?.type??'file';$('#tProject').value=projectId??test?.projectId??state.library.projects[0]?.id;$('#tCategory').value=test?.category??'Regression';$('#tTimeout').value=test?.timeoutMs??10000;$('#tTags').value=(test?.tags??[]).join(', ');$('#tOracle').value=test?.oracle??'';$('#tCounterexamples').value=test?.counterexamples??'';$('#tScope').value=test?.scope??'';$('#tSource').value=test?.source??'';$('#tEnabled').checked=test?.enabled!==false;$('#tConfig').value=JSON.stringify(test?.config??(file?{path:file,exists:true,kind:'file'}:state.templates.file),null,2);$('#configHint').textContent=hints[$('#tType').value];$('#editorError').textContent='';$('#editor').showModal()}
-function generic(title,html){$('#genericTitle').textContent=title;$('#genericBody').innerHTML=html;$('#generic').showModal()}
+function editor(test=null,{file,projectId,duplicate=false}={}){editingId=duplicate?null:test?.id??null;$('#editorTitle').textContent=editingId?'Test bearbeiten':'Test erstellen';$('#tType').innerHTML=Object.entries(typeNames).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');$('#tProject').innerHTML=state.library.projects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');$('#categories').innerHTML=state.categories.map(c=>`<option value="${esc(c)}">`).join('');$('#tId').value=duplicate?test.id+'-copy':test?.id??'test-'+crypto.randomUUID().slice(0,8);$('#tId').readOnly=!!editingId;$('#tName').value=duplicate?test.name+' (Kopie)':test?.name??(file?'Datei prüfen: '+file:'');$('#tPurpose').value=test?.purpose??'';$('#tType').value=test?.type??'file';$('#tProject').value=projectId??test?.projectId??state.library.projects[0]?.id;$('#tCategory').value=test?.category??'Regression';$('#tTimeout').value=test?.timeoutMs??10000;$('#tTags').value=(test?.tags??[]).join(', ');$('#tOracle').value=test?.oracle??'';$('#tCounterexamples').value=test?.counterexamples??'';$('#tScope').value=test?.scope??'';$('#tSource').value=test?.source??'';$('#tEnabled').checked=test?.enabled!==false;$('#tConfig').value=JSON.stringify(test?.config??(file?{path:file,exists:true,kind:'file'}:state.templates.file),null,2);$('#configHint').textContent=hints[$('#tType').value];$('#editorError').textContent='';$('#editor').showModal();if(conflictPanel)conflictHost().prepend(conflictPanel)}
+function generic(title,html){$('#genericTitle').textContent=title;$('#genericBody').innerHTML=html;$('#generic').showModal();if(conflictPanel)conflictHost().prepend(conflictPanel)}
 function suiteEditor(s){generic(s?'Testplan bearbeiten':'Testplan erstellen',`<form id="suiteForm"><label>Name<input id="sName" required value="${esc(s?.name??'')}"></label><label>Stabile ID<input id="sId" required pattern="[a-zA-Z0-9_-]{1,80}" value="${s?.id??'plan-'+crypto.randomUUID().slice(0,8)}" ${s?'readonly':''}></label><label class="check"><input type="checkbox" id="sStop" ${s?.stopOnFailure?'checked':''}> Nach erstem Fehler stoppen</label><div class="checkbox-list">${state.library.tests.map(t=>`<label><input type="checkbox" name="suiteTest" value="${t.id}" ${(s?.testIds??[...selected]).includes(t.id)?'checked':''}>${esc(t.name)} <span class="type">${t.type}</span></label>`).join('')}</div><div class="dialog-actions"><button class="primary">Testplan speichern</button></div></form>`);$('#suiteForm').onsubmit=guard(async e=>{e.preventDefault();const plan={id:$('#sId').value,name:$('#sName').value,testIds:[...document.querySelectorAll('[name=suiteTest]:checked')].map(x=>x.value),stopOnFailure:$('#sStop').checked};const l=structuredClone(state.library);if(!s&&l.suites.some(x=>x.id===plan.id))throw Error('ID bereits vorhanden');l.suites=l.suites.filter(x=>x.id!==plan.id);l.suites.push(plan);await save(l);$('#generic').close();toast('Testplan gespeichert')})}
 async function start(options){if(state.active)throw Error('Ein Lauf ist bereits aktiv');const run=await api('/runs','POST',{...options,requestId:crypto.randomUUID()});state.active=run.id;currentRun=run;view='runs';history.replaceState(null,'','#runs/'+run.id);await refresh();render();toast('Testlauf gestartet')}
 async function refresh(){const data=await api('/runs');state.runs=data.runs;state.gates=data.gates;state.active=data.active;if(currentRun)currentRun=await api('/runs/'+currentRun.id)}
@@ -1412,11 +1603,11 @@ if(d.project||d.action==='new-project'){const p=state.library.projects.find(p=>p
 switch(d.action){case'source-code':{const response=await fetch('/api/source',{headers:{'X-Cockpit-Token':state.token}});if(!response.ok)throw Error('Quelltextexport fehlgeschlagen');download('Evaluator-Inspector-komplettes-programm.txt',await response.text(),'text/plain');break}case'new':editor();break;case'run-selected':await start({testIds:[...selected],repeat:Number($('#repeat').value)});break;case'suite-selected':case'new-suite':suiteEditor();break;case'back-runs':show('runs');break;case'scan':{b.disabled=true;try{const projectId=$('#fileProject').value;fileData={...await api('/inventory?projectId='+encodeURIComponent(projectId)),projectId};fileRows()}finally{b.disabled=false}break}case'export-library':download('evaluator-inspector-library.json',JSON.stringify(state.library,null,2));break;case'import':generic('Testbibliothek importieren',`<p class="note">Import ersetzt die aktuelle Bibliothek nach Prüfung. Eine Sicherung wird angelegt. Kommandoausführung bleibt nach Import deaktiviert.</p><label>JSON-Datei wählen<input id="importFile" type="file" accept=".json,application/json"></label><textarea id="importJson" rows="14" class="code" placeholder="JSON-Bibliothek hier einfügen"></textarea><div class="dialog-actions"><button class="secondary" id="validateImport">Prüfen</button><button class="primary" id="applyImport" disabled>Geprüfte Bibliothek übernehmen</button></div><p id="importStatus" class="hint"></p>`);let candidate;$('#importFile').onchange=guard(async e=>{$('#importJson').value=await e.target.files[0].text();candidate=null;$('#applyImport').disabled=true});$('#importJson').oninput=()=>{candidate=null;$('#applyImport').disabled=true};$('#validateImport').onclick=guard(async()=>{candidate=JSON.parse($('#importJson').value);candidate.settings={allowCommands:false};await api('/validate','POST',candidate);$('#importStatus').textContent=`Gültig: ${candidate.projects.length} Projekte, ${candidate.tests.length} Tests, ${candidate.suites.length} Testpläne. ${candidate.tests.filter(t=>t.type==='command').length} Programmtests.`;$('#applyImport').disabled=false});$('#applyImport').onclick=guard(async()=>{await save(candidate);selected.clear();fileData=null;$('#generic').close();toast('Bibliothek importiert')});break;case'api-help':generic('API & CLI',`<p class="note">Die lokale REST-API verwendet einen Sitzungsschlüssel aus GET /api/bootstrap. Sende ihn als X-Cockpit-Token. Bibliotheksänderungen benötigen außerdem If-Match mit libraryRevision aus bootstrap. Der Dienst ist nur über localhost erreichbar.</p><pre>GET  /api/library\nPUT  /api/library\nPOST /api/validate\nPOST /api/runs  {"testIds":["test-id"],"requestId":"eindeutig"}\nGET  /api/runs/:id\nPOST /api/runs/:id/cancel\nGET  /api/runs/:id/export?format=junit\n\nnode cli.mjs validate bibliothek.json\nnode cli.mjs run bibliothek.json --suite plan-id\nnode cli.mjs run bibliothek.json --tests test-a,test-b\n\nExitcodes: 0 bestanden · 1 fachlich nicht bestanden/offen\n2 Eingabe-/Ausführungsfehler</pre><p class="hint">Vollständiger Vertrag und Adapterbeispiele: README.md und CONTRACT.md im Programmordner.</p>`);break}
 }));
 document.addEventListener('input',e=>{if(['search','typeFilter','categoryFilter'].includes(e.target.id))testRows();if(e.target.id==='fileSearch')fileRows()});
-document.addEventListener('change',guard(async e=>{const t=e.target;if(t.dataset.select){t.checked?selected.add(t.dataset.select):selected.delete(t.dataset.select);$('#selectedCount').textContent=selected.size+' ausgewählt'}if(t.id==='selectAll'){for(const item of visibleTests())t.checked?selected.add(item.id):selected.delete(item.id);testRows();$('#selectedCount').textContent=selected.size+' ausgewählt'}if(t.id==='tType'){resetTemplate()}if(t.id==='fileProject')fileRows();if(t.id==='allowCommands'){const l=structuredClone(state.library);l.settings={allowCommands:t.checked};try{await save(l)}catch(e){t.checked=!t.checked;throw e}}if(t.id==='compareRun'){if(!t.value){$('#comparison').textContent='';return}const previous=await api('/runs/'+t.value);const changes=currentRun.results.map(r=>{const prior=previous.results.find(p=>p.testId===r.testId&&p.iteration===r.iteration);const before=previous.definition.tests.find(x=>x.id===r.testId),after=currentRun.definition.tests.find(x=>x.id===r.testId),same=JSON.stringify(before)===JSON.stringify(after);return `<tr><td>${esc(r.testId)} #${r.iteration}</td><td>${prior?badge(prior.status):'Nicht vorhanden'}</td><td>${badge(r.status)}</td><td>${prior?duration(r.durationMs)+' / vorher '+duration(prior.durationMs):'—'}</td><td>${same?'Gleiche Definition':'Definition verändert / neu'}</td></tr>`}).join('');$('#comparison').innerHTML=`<div class="comparison">Vergleich zeigt Zustands- und Daueränderungen; unterschiedliche Definitionen oder Projektstände sind keine gesicherte Regression.</div><table><thead><tr><th>Test</th><th>Vorher</th><th>Aktuell</th><th>Dauer</th><th>Vergleichbarkeit</th></tr></thead><tbody>${changes}</tbody></table>`}}));
+document.addEventListener('change',guard(async e=>{const t=e.target;if(t.dataset.select){t.checked?selected.add(t.dataset.select):selected.delete(t.dataset.select);$('#selectedCount').textContent=selected.size+' ausgewählt';$('[data-action="run-selected"]').disabled=!!state.active||!selected.size}if(t.id==='selectAll'){for(const item of visibleTests())t.checked?selected.add(item.id):selected.delete(item.id);testRows();$('#selectedCount').textContent=selected.size+' ausgewählt';$('[data-action="run-selected"]').disabled=!!state.active||!selected.size}if(t.id==='tType'){resetTemplate()}if(t.id==='fileProject')fileRows();if(t.id==='allowCommands'){const l=structuredClone(state.library);l.settings={allowCommands:t.checked};try{await save(l)}catch(e){t.checked=!t.checked;throw e}}if(t.id==='compareRun'){if(!t.value){$('#comparison').textContent='';return}const previous=await api('/runs/'+t.value);const changes=currentRun.results.map(r=>{const prior=previous.results.find(p=>p.testId===r.testId&&p.iteration===r.iteration);const before=previous.definition.tests.find(x=>x.id===r.testId),after=currentRun.definition.tests.find(x=>x.id===r.testId),same=JSON.stringify(before)===JSON.stringify(after);return `<tr><td>${esc(r.testId)} #${r.iteration}</td><td>${prior?badge(prior.status):'Nicht vorhanden'}</td><td>${badge(r.status)}</td><td>${prior?duration(r.durationMs)+' / vorher '+duration(prior.durationMs):'—'}</td><td>${same?'Gleiche Definition':'Definition verändert / neu'}</td></tr>`}).join('');$('#comparison').innerHTML=`<div class="comparison">Vergleich zeigt Zustands- und Daueränderungen; unterschiedliche Definitionen oder Projektstände sind keine gesicherte Regression.</div><table><thead><tr><th>Test</th><th>Vorher</th><th>Aktuell</th><th>Dauer</th><th>Vergleichbarkeit</th></tr></thead><tbody>${changes}</tbody></table>`}}));
 function resetTemplate(){$('#tConfig').value=JSON.stringify(state.templates[$('#tType').value],null,2);$('#configHint').textContent=hints[$('#tType').value]}
 $('#resetTemplate').onclick=resetTemplate;
 $('#editorForm').onsubmit=async e=>{e.preventDefault();try{const test={id:$('#tId').value,name:$('#tName').value,purpose:$('#tPurpose').value,oracle:$('#tOracle').value,counterexamples:$('#tCounterexamples').value,scope:$('#tScope').value,source:$('#tSource').value,type:$('#tType').value,projectId:$('#tProject').value,category:$('#tCategory').value,timeoutMs:Number($('#tTimeout').value),tags:$('#tTags').value.split(',').map(x=>x.trim()).filter(Boolean),enabled:$('#tEnabled').checked,config:JSON.parse($('#tConfig').value)};const l=structuredClone(state.library);if(!editingId&&l.tests.some(t=>t.id===test.id))throw Error('Test-ID bereits vorhanden');l.tests=l.tests.filter(t=>t.id!==editingId);l.tests.push(test);await save(l);$('#editor').close();toast('Testdefinition gespeichert')}catch(e){$('#editorError').textContent=e.message}};
-async function boot(){try{state=await api('/bootstrap');Object.assign(typeNames,state.typeNames);for(const type of state.types)hints[type]??='Explizite Sollwerte definieren. Konfiguration und Aussagegrenzen werden im Lauf gespeichert.';$('#version').textContent='VERSION '+state.version+' · LOCAL';const route=location.hash.slice(1).split('/');view=names[route[0]]?route[0]:'overview';if(view==='runs'&&route[1])currentRun=await api('/runs/'+route[1]);render();setInterval(async()=>{if(!state.active)return;try{await refresh();if(!$('#generic').open&&!$('#editor').open)render()}catch(e){$('#activity').textContent='Verbindung unterbrochen';$('#activity').className='activity busy'}},1200)}catch(e){$('#content').textContent='Cockpit konnte nicht geladen werden: '+e.message}}
+async function boot(){try{state=await api('/bootstrap');Object.assign(typeNames,state.typeNames);for(const type of state.types)hints[type]??='Explizite Sollwerte definieren. Konfiguration und Aussagegrenzen werden im Lauf gespeichert.';$('#version').textContent='VERSION '+state.version+' · LOCAL';const route=location.hash.slice(1).split('/');view=names[route[0]]?route[0]:'overview';if(view==='runs'&&route[1])currentRun=await api('/runs/'+route[1]);render();setInterval(async()=>{if(!state.active)return;try{const before=JSON.stringify(currentRun);await refresh();updateActivity();if((!currentRun||before!==JSON.stringify(currentRun))&&shouldRefreshView(view,$('#generic').open||$('#editor').open||!!conflictRequest))preserveView(document,window,render)}catch(e){$('#activity').textContent='Verbindung unterbrochen';$('#activity').className='activity busy'}},1200)}catch(e){$('#content').textContent='Cockpit konnte nicht geladen werden: '+e.message}}
 window.addEventListener('hashchange',guard(async()=>{const [next,id]=location.hash.slice(1).split('/');view=names[next]?next:'overview';currentRun=view==='runs'&&id?await api('/runs/'+id):null;render()}));
 boot();
 
@@ -1451,9 +1642,64 @@ export function renderQuick(ctx){const {state,api,adopt,show,generic,toast,esc}=
 
 ==============================================================================
 FILE: public/style.css
-SHA256: 503bafa5e5a89bae235a8bd220e62582a673d9ff132ff5f95159981e6ba1939e
+SHA256: 06ff759cb8502b146d7b333e3c0271eb944c3639c9f58a5d17c874109610220f
 ==============================================================================
-:root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#21342f;background:#f4f6f3;font-synthesis:none;--green:#17684e;--line:#dde4dd;--muted:#718078}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button,a{ -webkit-tap-highlight-color:transparent}button{cursor:pointer;border:1px solid transparent;border-radius:7px;padding:10px 15px;background:#fff;color:inherit;font-size:13px;font-weight:600}button:disabled{cursor:not-allowed;opacity:.45}button:hover:not(:disabled){filter:brightness(.96)}a{color:var(--green)}aside{position:fixed;inset:0 auto 0 0;width:254px;background:#fff;border-right:1px solid var(--line);padding:30px 20px;display:flex;flex-direction:column}.brand{display:flex;gap:12px;text-decoration:none;color:#233f34;align-items:center;font-size:19px;font-weight:750}.brand small{display:block;font-size:8px;letter-spacing:1.3px;margin-top:7px;color:#718078}.logo{position:relative;background:#17684e;color:#fff;width:40px;height:43px;border-radius:11px;display:grid;place-items:center;font-size:25px}.logo span{position:absolute;bottom:0;right:3px;font-size:17px;color:#bded86}.workspace-label{font-size:10px;letter-spacing:1.7px;color:#89978e;margin:46px 12px 16px}nav{display:grid;gap:7px}nav button{display:flex;align-items:center;gap:12px;text-align:left;padding:13px 12px;color:#748179;background:transparent;font-size:16px}nav button span{font-size:13px;font-weight:500}nav button.active{color:#17684e;background:#eaf2eb}nav b{font-size:10px;padding:2px 5px;background:#d9e9da;margin-left:auto;border-radius:4px}.aside-note{margin-top:auto;border-top:1px solid var(--line);padding:22px 8px 0;font-size:12px}.aside-note p{font-size:11px;line-height:1.8;color:#89978e}.aside-note small{color:#9ca79f;font-size:10px}.online-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#4b9a63;margin-right:6px}main{margin-left:254px;min-height:100vh}header{height:77px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 42px;background:#fafbf9;font-size:12px}.breadcrumb{color:#8d9991}.breadcrumb span{margin:0 15px;color:#b5beb7}.breadcrumb strong{color:#53665b;font-weight:500}.activity{font-size:11px;border:1px solid var(--line);padding:8px 12px;border-radius:20px;background:white}.activity.busy{color:#956911;background:#fff4d6}#content{padding:36px 42px;max-width:1600px;margin:auto}.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px}.eyebrow{font-size:10px;letter-spacing:1.8px;color:var(--green);font-weight:700;margin-bottom:10px}h1{font-size:29px;letter-spacing:-.8px;margin:0 0 10px;font-weight:650}h2{font-size:18px;font-weight:650;margin:0}h3{font-size:14px;margin:0 0 12px}p{line-height:1.65}.subtitle{color:var(--muted);font-size:13px;margin:0;max-width:700px}.primary{background:var(--green);color:white;box-shadow:0 3px 7px #17684e15}.secondary{border-color:var(--line);background:white}.danger{background:#fbedeb;color:#b54a3f;border-color:#f0d4d0}.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}.metric{background:white;border:1px solid var(--line);border-radius:10px;padding:23px}.metric small{font-size:11px;color:var(--muted)}.metric strong{display:block;font-size:31px;font-weight:600;margin:14px 0 8px}.metric span{font-size:11px;color:var(--muted)}.metric .green{color:var(--green)}.panel{border:1px solid var(--line);background:white;border-radius:10px;overflow:hidden;margin-bottom:22px}.panel-head{padding:22px 24px;border-bottom:1px solid #edf0eb;display:flex;align-items:center;justify-content:space-between;gap:15px}.panel-head p{margin:7px 0 0;font-size:12px;color:var(--muted)}.panel-body{padding:24px}.split{display:grid;grid-template-columns:1.55fr 1fr;gap:22px}.capabilities{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.capability{padding:15px 10px;background:#f7f9f5;border:1px solid #e7ece4;border-radius:7px;font-size:11px;text-align:center;color:#4e6558}.capability b{font-size:19px;display:block;font-family:Consolas,monospace;color:#63856e;margin-bottom:8px}.callout{padding:22px;border-radius:9px;background:#eaf0e2;color:#435b39;font-size:12px;line-height:1.7}.callout strong{display:block;margin-bottom:6px;font-size:13px}.steps{display:grid;gap:20px}.step{display:flex;gap:14px;font-size:12px}.step b{height:26px;width:26px;flex-shrink:0;display:grid;place-items:center;background:#eff4e9;color:#678347;border-radius:7px}.step strong{font-size:12px}.step p{margin:5px 0 0;color:var(--muted);font-size:11px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.toolbar input{flex:1;min-width:190px}.toolbar select{max-width:240px}.toolbar .selected{font-size:12px;color:var(--muted);margin-left:auto}input,select,textarea{border:1px solid #d9e1d8;border-radius:6px;background:#fff;padding:10px 12px;color:#2b4034;font-size:13px;outline:none}input:focus,select:focus,textarea:focus{border-color:#3f8561;box-shadow:0 0 0 3px #17684e14}input[type=checkbox]{accent-color:var(--green);width:15px;height:15px}table{width:100%;border-collapse:collapse;text-align:left;font-size:12px}th{font-size:10px;letter-spacing:.7px;color:#7c8d81;font-weight:600;background:#fafbf8;padding:13px 16px;text-transform:uppercase}td{padding:17px 16px;border-top:1px solid #edf1eb;vertical-align:middle}td strong{font-size:12px;font-weight:600}td small{display:block;color:#8a968e;max-width:360px;line-height:1.5;margin-top:5px}td .actions{flex-wrap:nowrap}td button{font-size:11px;padding:6px 8px}.table-scroll{overflow:auto}.badge{display:inline-block;padding:5px 8px;border-radius:5px;font-size:10px;white-space:nowrap;background:#eff2ed;color:#6f7d72}.badge.passed{background:#e9f3e8;color:#337145}.badge.failed,.badge.error{background:#fbeceb;color:#bb5349}.badge.running,.badge.queued{background:#e9effb;color:#557ab1}.badge.timeout,.badge.pending_manual{background:#fff4dc;color:#9a7927}.badge.cancelled,.badge.interrupted{background:#f1eaf5;color:#836391}.type{font-size:10px;letter-spacing:.5px;color:#497e62;border:1px solid #dce8dc;border-radius:4px;padding:3px 6px;background:#f5faf3}.empty{text-align:center;padding:52px 25px;color:var(--muted);font-size:13px}.empty b{display:block;color:#365843;font-size:16px;margin-bottom:10px}.text-button{padding:5px 2px;color:var(--green);background:none;font-size:12px}.hint{font-size:11px;line-height:1.6;color:#7b887f;margin:8px 0}.note{color:#7b887f;font-size:12px}.code,pre{font-family:Cascadia Code,Consolas,monospace;font-size:12px;line-height:1.6}.code{width:100%;background:#f7f9f5;tab-size:2}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9f5;padding:16px;border:1px solid #e1e8dc;border-radius:6px;max-height:450px;overflow:auto}dialog{border:1px solid var(--line);border-radius:14px;width:min(800px,92vw);max-height:92vh;padding:28px;color:#21342f;box-shadow:0 24px 100px #18392838}dialog::backdrop{background:#17352765;backdrop-filter:blur(3px)}.dialog-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}.icon{font-size:24px;padding:0 8px;color:#89978e}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}label{display:flex;flex-direction:column;gap:7px;font-size:11px;font-weight:600}.wide{grid-column:1/-1}.check{flex-direction:row;align-items:center;gap:9px}.config-head{display:flex;align-items:center;justify-content:space-between;margin-top:20px}.dialog-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}.error{color:#b74d42;font-size:12px}.run-result{border:1px solid var(--line);border-radius:8px;margin:12px 0;overflow:hidden}.run-result summary{display:flex;gap:14px;align-items:center;cursor:pointer;padding:16px;font-size:12px}.run-result summary .badge{margin-left:auto}.result-body{padding:0 20px 20px}.assertion{font-size:12px;padding:10px 0;border-top:1px solid var(--line)}.assertion strong{display:inline-block;min-width:25px}.assertion small{display:block;color:#7b887f;margin-top:6px;overflow-wrap:anywhere}.trend{display:flex;align-items:end;gap:8px;height:100px;margin-top:15px}.trend button{min-width:12px;flex:1;border-radius:4px 4px 0 0;background:#bad8b5;position:relative;padding:0}.trend button.bad{background:#e2b2a7}.trend button.open{background:#e1d3ad}.trend-label{font-size:10px;color:#8b978f;display:flex;justify-content:space-between;margin-top:12px}#toast{position:fixed;top:88px;right:30px;z-index:5;background:#214e39;color:white;box-shadow:0 5px 20px #0002;border-radius:8px;padding:14px 20px;font-size:12px;max-width:600px}#toast.error-toast{background:#9f403a}footer{padding:18px 42px 30px;color:#829082;font-size:10px;display:flex;justify-content:space-between;gap:20px}.file-path{font-family:Consolas,monospace;overflow-wrap:anywhere}.count-label{font-size:11px;color:var(--muted)}.spacer{margin-top:24px}.inline-number{width:70px}.mono{font-family:Consolas,monospace}.suite-card{padding:22px;border:1px solid var(--line);background:white;border-radius:10px}.suite-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}.suite-card p{font-size:12px;color:var(--muted)}.suite-card .actions{margin-top:20px}#genericBody label{margin:14px 0}.comparison{font-size:12px;padding:12px;border-radius:6px;background:#f0f5e9;margin:12px 0}.checkbox-list{max-height:300px;overflow:auto}.checkbox-list label{display:flex;flex-direction:row;gap:10px;padding:8px}.warning{background:#fff4d6;border:1px solid #eaddb0;padding:14px;font-size:12px;border-radius:7px;margin-bottom:15px}@media(max-width:1100px){aside{width:214px;padding:25px 14px}main{margin-left:214px}#content{padding:28px 24px}header{padding:0 24px}.split{grid-template-columns:1fr}.metrics{gap:10px}.metric{padding:17px}.capabilities{grid-template-columns:repeat(4,1fr)}}@media(max-width:720px){aside{position:relative;width:auto;padding:16px}.workspace-label,.aside-note{display:none}nav{display:flex;overflow:auto;gap:4px;margin-top:15px}nav button{padding:10px;white-space:nowrap}nav b{display:none}main{margin:0}header{height:55px}.metrics{grid-template-columns:repeat(2,1fr)}.page-head{flex-direction:column}.form-grid,.suite-grid{grid-template-columns:1fr}.wide{grid-column:auto}#content{padding:22px 16px}footer{padding:15px;display:block}.capabilities{grid-template-columns:repeat(2,1fr)}}
+:root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#21342f;background:#f4f6f3;font-synthesis:none;--green:#17684e;--line:#dde4dd;--muted:#5d6b62}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}button,a{ -webkit-tap-highlight-color:transparent}button{cursor:pointer;border:1px solid transparent;border-radius:7px;padding:10px 15px;background:#fff;color:inherit;font-size:13px;font-weight:600}button:disabled{cursor:not-allowed;opacity:.45}button:hover:not(:disabled){filter:brightness(.96)}a{color:var(--green)}aside{position:fixed;inset:0 auto 0 0;width:254px;background:#fff;border-right:1px solid var(--line);padding:30px 20px;display:flex;flex-direction:column}.brand{display:flex;gap:12px;text-decoration:none;color:#233f34;align-items:center;font-size:19px;font-weight:750}.brand small{display:block;font-size:8px;letter-spacing:1.3px;margin-top:7px;color:#5d6b62}.logo{position:relative;background:#17684e;color:#fff;width:40px;height:43px;border-radius:11px;display:grid;place-items:center;font-size:25px}.logo span{position:absolute;bottom:0;right:3px;font-size:17px;color:#bded86}.workspace-label{font-size:10px;letter-spacing:1.7px;color:#89978e;margin:46px 12px 16px}nav{display:grid;gap:7px}nav button{display:flex;align-items:center;gap:12px;text-align:left;padding:13px 12px;color:#748179;background:transparent;font-size:16px}nav button span{font-size:13px;font-weight:500}nav button.active{color:#17684e;background:#eaf2eb}nav b{font-size:10px;padding:2px 5px;background:#d9e9da;margin-left:auto;border-radius:4px}.aside-note{margin-top:auto;border-top:1px solid var(--line);padding:22px 8px 0;font-size:12px}.aside-note p{font-size:11px;line-height:1.8;color:#89978e}.aside-note small{color:#9ca79f;font-size:10px}.online-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#4b9a63;margin-right:6px}main{margin-left:254px;min-height:100vh}header{height:77px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 42px;background:#fafbf9;font-size:12px}.breadcrumb{color:#8d9991}.breadcrumb span{margin:0 15px;color:#b5beb7}.breadcrumb strong{color:#53665b;font-weight:500}.activity{font-size:11px;border:1px solid var(--line);padding:8px 12px;border-radius:20px;background:white}.activity.busy{color:#956911;background:#fff4d6}#content{padding:36px 42px;max-width:1600px;margin:auto}.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px}.eyebrow{font-size:10px;letter-spacing:1.8px;color:var(--green);font-weight:700;margin-bottom:10px}h1{font-size:29px;letter-spacing:-.8px;margin:0 0 10px;font-weight:650}h2{font-size:18px;font-weight:650;margin:0}h3{font-size:14px;margin:0 0 12px}p{line-height:1.65}.subtitle{color:var(--muted);font-size:13px;margin:0;max-width:700px}.primary{background:var(--green);color:white;box-shadow:0 3px 7px #17684e15}.secondary{border-color:var(--line);background:white}.danger{background:#fbedeb;color:#b54a3f;border-color:#f0d4d0}.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}.metric{background:white;border:1px solid var(--line);border-radius:10px;padding:23px}.metric small{font-size:11px;color:var(--muted)}.metric strong{display:block;font-size:31px;font-weight:600;margin:14px 0 8px}.metric span{font-size:11px;color:var(--muted)}.metric .green{color:var(--green)}.panel{border:1px solid var(--line);background:white;border-radius:10px;overflow:hidden;margin-bottom:22px}.panel-head{padding:22px 24px;border-bottom:1px solid #edf0eb;display:flex;align-items:center;justify-content:space-between;gap:15px}.panel-head p{margin:7px 0 0;font-size:12px;color:var(--muted)}.panel-body{padding:24px}.split{display:grid;grid-template-columns:1.55fr 1fr;gap:22px}.capabilities{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.capability{padding:15px 10px;background:#f7f9f5;border:1px solid #e7ece4;border-radius:7px;font-size:11px;text-align:center;color:#4e6558}.capability b{font-size:19px;display:block;font-family:Consolas,monospace;color:#63856e;margin-bottom:8px}.callout{padding:22px;border-radius:9px;background:#eaf0e2;color:#435b39;font-size:12px;line-height:1.7}.callout strong{display:block;margin-bottom:6px;font-size:13px}.steps{display:grid;gap:20px}.step{display:flex;gap:14px;font-size:12px}.step b{height:26px;width:26px;flex-shrink:0;display:grid;place-items:center;background:#eff4e9;color:#678347;border-radius:7px}.step strong{font-size:12px}.step p{margin:5px 0 0;color:var(--muted);font-size:11px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.toolbar input{flex:1;min-width:190px}.toolbar select{max-width:240px}.toolbar .selected{font-size:12px;color:var(--muted);margin-left:auto}input,select,textarea{border:1px solid #d9e1d8;border-radius:6px;background:#fff;padding:10px 12px;color:#2b4034;font-size:13px;outline:none}input:focus,select:focus,textarea:focus{border-color:#3f8561;box-shadow:0 0 0 3px #17684e14}input[type=checkbox]{accent-color:var(--green);width:15px;height:15px}table{width:100%;border-collapse:collapse;text-align:left;font-size:12px}th{font-size:10px;letter-spacing:.7px;color:#7c8d81;font-weight:600;background:#fafbf8;padding:13px 16px;text-transform:uppercase}td{padding:17px 16px;border-top:1px solid #edf1eb;vertical-align:middle}td strong{font-size:12px;font-weight:600}td small{display:block;color:#8a968e;max-width:360px;line-height:1.5;margin-top:5px}td .actions{flex-wrap:nowrap}td button{font-size:11px;padding:6px 8px}.table-scroll{overflow:auto}.badge{display:inline-block;padding:5px 8px;border-radius:5px;font-size:10px;white-space:nowrap;background:#eff2ed;color:#5d6b62}.badge.passed{background:#e9f3e8;color:#337145}.badge.failed,.badge.error{background:#fbeceb;color:#a43b32}.badge.running,.badge.queued{background:#e9effb;color:#3d5f96}.badge.timeout,.badge.pending_manual{background:#fff4dc;color:#795c14}.badge.cancelled,.badge.interrupted{background:#f1eaf5;color:#6d4f7b}.type{font-size:10px;letter-spacing:.5px;color:#43775b;border:1px solid #dce8dc;border-radius:4px;padding:3px 6px;background:#f5faf3}.empty{text-align:center;padding:52px 25px;color:var(--muted);font-size:13px}.empty b{display:block;color:#365843;font-size:16px;margin-bottom:10px}.text-button{padding:5px 2px;color:var(--green);background:none;font-size:12px}.hint{font-size:11px;line-height:1.6;color:#5d6b62;margin:8px 0}.note{color:#5d6b62;font-size:12px}.code,pre{font-family:Cascadia Code,Consolas,monospace;font-size:12px;line-height:1.6}.code{width:100%;background:#f7f9f5;tab-size:2}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f7f9f5;padding:16px;border:1px solid #e1e8dc;border-radius:6px;max-height:450px;overflow:auto}dialog{border:1px solid var(--line);border-radius:14px;width:min(800px,92vw);max-height:92vh;padding:28px;color:#21342f;box-shadow:0 24px 100px #18392838}dialog::backdrop{background:#17352765;backdrop-filter:blur(3px)}.dialog-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}.icon{font-size:24px;padding:0 8px;color:#89978e}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}label{display:flex;flex-direction:column;gap:7px;font-size:11px;font-weight:600}.wide{grid-column:1/-1}.check{flex-direction:row;align-items:center;gap:9px}.config-head{display:flex;align-items:center;justify-content:space-between;margin-top:20px}.dialog-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}.error{color:#b74d42;font-size:12px}.run-result{border:1px solid var(--line);border-radius:8px;margin:12px 0;overflow:hidden}.run-result summary{display:flex;gap:14px;align-items:center;cursor:pointer;padding:16px;font-size:12px}.run-result summary .badge{margin-left:auto}.result-body{padding:0 20px 20px}.assertion{font-size:12px;padding:10px 0;border-top:1px solid var(--line)}.assertion strong{display:inline-block;min-width:25px}.assertion small{display:block;color:#5d6b62;margin-top:6px;overflow-wrap:anywhere}.trend{display:flex;align-items:end;gap:8px;height:100px;margin-top:15px}.trend button{min-width:12px;flex:1;border-radius:4px 4px 0 0;background:#bad8b5;position:relative;padding:0}.trend button.bad{background:#e2b2a7}.trend button.open{background:#e1d3ad}.trend-label{font-size:10px;color:#8b978f;display:flex;justify-content:space-between;margin-top:12px}#toast{position:fixed;top:88px;right:30px;z-index:5;background:#214e39;color:white;box-shadow:0 5px 20px #0002;border-radius:8px;padding:14px 20px;font-size:12px;max-width:600px}#toast.error-toast{background:#9f403a}footer{padding:18px 42px 30px;color:#829082;font-size:10px;display:flex;justify-content:space-between;gap:20px}.file-path{font-family:Consolas,monospace;overflow-wrap:anywhere}.count-label{font-size:11px;color:var(--muted)}.spacer{margin-top:24px}.inline-number{width:70px}.mono{font-family:Consolas,monospace}.suite-card{padding:22px;border:1px solid var(--line);background:white;border-radius:10px}.suite-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}.suite-card p{font-size:12px;color:var(--muted)}.suite-card .actions{margin-top:20px}#genericBody label{margin:14px 0}.comparison{font-size:12px;padding:12px;border-radius:6px;background:#f0f5e9;margin:12px 0}.checkbox-list{max-height:300px;overflow:auto}.checkbox-list label{display:flex;flex-direction:row;gap:10px;padding:8px}.warning{background:#fff4d6;border:1px solid #eaddb0;padding:14px;font-size:12px;border-radius:7px;margin-bottom:15px}@media(max-width:1100px){aside{width:214px;padding:25px 14px}main{margin-left:214px}#content{padding:28px 24px}header{padding:0 24px}.split{grid-template-columns:1fr}.metrics{gap:10px}.metric{padding:17px}.capabilities{grid-template-columns:repeat(4,1fr)}}@media(max-width:720px){aside{position:relative;width:auto;padding:16px}.workspace-label,.aside-note{display:none}nav{display:flex;overflow:auto;gap:4px;margin-top:15px}nav button{padding:10px;white-space:nowrap}nav b{display:none}main{margin:0}header{height:55px}.metrics{grid-template-columns:repeat(2,1fr)}.page-head{flex-direction:column}.form-grid,.suite-grid{grid-template-columns:1fr}.wide{grid-column:auto}#content{padding:22px 16px}footer{padding:15px;display:block}.capabilities{grid-template-columns:repeat(2,1fr)}}
+
+
+==============================================================================
+FILE: public/ui-state.js
+SHA256: e544ad0db49dd14fee2884c25be8fde56ae10774fd35a627e1bbda7eac93be19
+==============================================================================
+export async function readApiResponse(response) {
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.error ?? 'Anfrage fehlgeschlagen');
+    error.status = response.status;
+    error.code = data.code;
+    throw error;
+  }
+  return data;
+}
+
+export const shouldRefreshView = (view, editorOpen) =>
+  !editorOpen && ['overview', 'runs', 'suites'].includes(view);
+
+// Keep user-controlled state when result values are refreshed.
+function selectionOf(node) {
+  try {
+    return typeof node?.selectionStart === 'number' ? [node.selectionStart,node.selectionEnd] : null;
+  } catch { return null; }
+}
+
+export function preserveView(document, window, render) {
+  const content = document.querySelector('#content');
+  const details = [...content.querySelectorAll('details')].map(node => node.open);
+  const controls = [...content.querySelectorAll('input,select,textarea')]
+    .filter(node => node.id).map(node => ({id:node.id,value:node.value,checked:node.checked}));
+  const active = document.activeElement;
+  const focusId = active?.id;
+  const selection = selectionOf(active);
+  const comparison = document.querySelector('#comparison')?.innerHTML;
+  const [x,y] = [window.scrollX,window.scrollY];
+  render();
+  [...content.querySelectorAll('details')].forEach((node,index) => {
+    if (index < details.length) node.open = details[index];
+  });
+  for (const control of controls) {
+    const node = document.getElementById(control.id);
+    if (node) { node.value = control.value; node.checked = control.checked; }
+  }
+  const target = focusId && document.getElementById(focusId);
+  if (target) { target.focus({preventScroll:true}); if(selection)try{target.setSelectionRange(...selection)}catch{}; }
+  // A prior comparison contains old result statuses; invalidate it explicitly.
+  const compare = document.querySelector('#comparison');
+  if (compare && comparison) {
+    compare.textContent = 'Laufergebnisse aktualisiert. Vergleichslauf erneut wählen.';
+    const select = document.getElementById('compareRun');if(select)select.value='';
+  }
+  window.scrollTo(x,y);
+}
 
 
 ==============================================================================
@@ -2789,7 +3035,7 @@ SHA256: 7c76e6abd95389cce0d559d3b5ac8fbec21dde16fff3addabc07f4ef4dfe6803
 
 ==============================================================================
 FILE: server.mjs
-SHA256: eacf97b2ff19ab631e1175e9cf05ba0cea8555485a4261aabccce2696fe1a91d
+SHA256: bb0efc1cab8c350420b66323546a4a492fef7c39293803f8972aeeeeb909f877
 ==============================================================================
 import http from 'node:http';
 import {acquireLock} from './lib/service-lock.mjs';
@@ -2806,25 +3052,27 @@ import {seed} from './lib/seed.mjs';
 import {inventory} from './lib/adapters.mjs';
 import {VERSION,TYPES,CATEGORIES,templates,validateLibrary} from './lib/contract.mjs';
 export const ROOT=path.dirname(fileURLToPath(import.meta.url));
-export function createApp({dataDir=process.env.COCKPIT_DATA??path.join(ROOT,'.data'),initial=seed(ROOT)}={}){
+export function createApp({shutdownGraceMs=1000,dataDir=process.env.COCKPIT_DATA??path.join(ROOT,'.data'),initial=seed(ROOT)}={}){
  const release=acquireLock(dataDir);let store;try{store=new Store(dataDir,initial)}catch(e){release();throw e}const runner=new Runner(store),token=crypto.randomBytes(32).toString('hex');
  const presets=JSON.parse(fs.readFileSync(path.join(ROOT,'resources','quick-presets.json'),'utf8'));
  const gates=()=>Object.fromEntries(store.library.suites.map(s=>[s.id,suiteVerdict(s,store.library,store.runs.values(),runner.engineHash)]));
+ let boundPort;
  const server=http.createServer(async(req,res)=>{
  const send=(code,data,type='application/json')=>{res.writeHead(code,{'Content-Type':type+'; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'"});res.end(type==='application/json'?JSON.stringify(data):data)};
  try{
- const localPort=server.address().port,origin=`http://127.0.0.1:${localPort}`;
+ const localPort=server.address()?.port??boundPort;if(!localPort){res.destroy();return}const origin=`http://127.0.0.1:${localPort}`;
  if(![`127.0.0.1:${localPort}`,`localhost:${localPort}`].includes(req.headers.host))return send(403,{error:'Ungültiger Host'});
  if(req.headers.origin&&![origin,`http://localhost:${localPort}`].includes(req.headers.origin))return send(403,{error:'Fremder Origin'});
  const url=new URL(req.url,origin),p=url.pathname;
- if(req.method==='GET'&&p==='/api/health')return send(200,{ok:true,application:'evaluator-inspector',root:ROOT,version:VERSION,engineHash:runner.engineHash});
+ if(req.method==='GET'&&p==='/api/health')return send(200,{ok:true,application:'evaluator-inspector',root:ROOT,version:VERSION,engineHash:runner.engineHash,pid:process.pid,dataDir:path.resolve(dataDir),processStartedAt:new Date(Date.now()-process.uptime()*1000).toISOString()});
  if(req.method==='GET'&&p==='/api/bootstrap')return send(200,{token,version:VERSION,types:TYPES,typeNames:extraNames,categories:CATEGORIES,templates,library:store.library,libraryRevision:hash(store.library),gates:gates(),presets,runs:store.listRuns(),warnings:store.warnings,active:runner.active?.id??null});
  if(p.startsWith('/api/')&&req.headers['x-cockpit-token']!==token)return send(403,{error:'Lokaler Sitzungsschlüssel fehlt'});
  let body={};if(['POST','PUT'].includes(req.method)){let parts=[],size=0;for await(const b of req){size+=b.length;if(size>4*1024*1024)return send(413,{error:'Eingabe überschreitet 4 MiB'});parts.push(b)}body=JSON.parse(Buffer.concat(parts).toString()||'{}')}
+ if(closing&&['POST','PUT','DELETE'].includes(req.method))return send(503,{code:'SERVICE_CLOSING',error:'Dienst wird beendet; keine neue Änderung angenommen'});
  if(req.method==='GET'&&p==='/api/library')return send(200,store.library);
- if(req.method==='PUT'&&p==='/api/library'){if(runner.active)return send(409,{error:'Bibliothek während eines Laufs gesperrt'});validateLibrary(body);if(req.headers['if-match']!==hash(store.library))return send(409,{error:'Bibliothek wurde inzwischen geändert. Neu laden, bevor du speicherst.'});for(const project of body.projects){if(!fs.statSync(project.root).isDirectory())throw Error('Projektordner fehlt: '+project.root)}store.saveLibrary(body);return send(200,{library:store.library,libraryRevision:hash(store.library),gates:gates()})}
- if(req.method==='POST'&&p==='/api/quick-plans'){if(runner.active)throw Error('Bibliothek während eines Laufs gesperrt');if(req.headers['if-match']!==hash(store.library))return send(409,{error:'Bibliothek inzwischen geändert. Neu laden.'});const preset=presets.presets.find(p=>p.id===body.presetId);if(!preset)throw Error('Vorlage fehlt');const library=structuredClone(store.library),project=library.projects.find(p=>p.id===body.projectId);if(!project)throw Error('Testumgebung fehlt');if(body.environment){for(const k of Object.keys(body.environment))if(!['target','candidate'].includes(k))throw Error('Unbekanntes Umgebungsfeld');Object.assign(project,body.environment)}const adapted={...preset};if(body.adaptation){for(const k of Object.keys(body.adaptation)){if(!['oracle','negative','scope'].includes(k)||typeof body.adaptation[k]!=='string'||!body.adaptation[k].trim())throw Error('Vorlagenanpassung ungültig');adapted[k]=body.adaptation[k]}}const plan=instantiatePreset(adapted,project,body);library.tests.push(...plan.tests);library.suites.push(plan.suite);store.saveLibrary(library);return send(201,{library:store.library,libraryRevision:hash(store.library),gates:gates(),suiteId:plan.suite.id})}
- if(req.method==='POST'&&p==='/api/shutdown'){if(runner.active)return send(409,{error:'Aktiven Lauf zuerst abbrechen und Abschluss abwarten'});send(202,{shutdownRequested:true});server.close();return}
+ if(req.method==='PUT'&&p==='/api/library'){if(runner.active)return send(409,{code:'RUN_ACTIVE',error:'Bibliothek während eines Laufs gesperrt'});validateLibrary(body);if(req.headers['if-match']!==hash(store.library))return send(409,{code:'LIBRARY_CONFLICT',error:'Bibliothek wurde inzwischen geändert. Entwurf sichern und aktuellen Stand laden.'});for(const project of body.projects){if(!fs.existsSync(project.root)||!fs.statSync(project.root).isDirectory())throw Error('Projektordner fehlt: '+project.root)}store.saveLibrary(body);return send(200,{library:store.library,libraryRevision:hash(store.library),gates:gates()})}
+ if(req.method==='POST'&&p==='/api/quick-plans'){if(runner.active)throw Error('Bibliothek während eines Laufs gesperrt');if(req.headers['if-match']!==hash(store.library))return send(409,{code:'LIBRARY_CONFLICT',error:'Bibliothek inzwischen geändert. Entwurf sichern und aktuellen Stand laden.'});const preset=presets.presets.find(p=>p.id===body.presetId);if(!preset)throw Error('Vorlage fehlt');const library=structuredClone(store.library),project=library.projects.find(p=>p.id===body.projectId);if(!project)throw Error('Testumgebung fehlt');if(body.environment){for(const k of Object.keys(body.environment))if(!['target','candidate'].includes(k))throw Error('Unbekanntes Umgebungsfeld');Object.assign(project,body.environment)}const adapted={...preset};if(body.adaptation){for(const k of Object.keys(body.adaptation)){if(!['oracle','negative','scope'].includes(k)||typeof body.adaptation[k]!=='string'||!body.adaptation[k].trim())throw Error('Vorlagenanpassung ungültig');adapted[k]=body.adaptation[k]}}const plan=instantiatePreset(adapted,project,body);library.tests.push(...plan.tests);library.suites.push(plan.suite);store.saveLibrary(library);return send(201,{library:store.library,libraryRevision:hash(store.library),gates:gates(),suiteId:plan.suite.id})}
+ if(req.method==='POST'&&p==='/api/shutdown'){if(runner.active)return send(409,{error:'Aktiven Lauf zuerst abbrechen und Abschluss abwarten'});send(202,{shutdownRequested:true});close().catch(()=>{});return}
  if(req.method==='GET'&&p==='/api/source')return send(200,sourceText(ROOT),'text/plain');
  if(req.method==='POST'&&p==='/api/validate'){validateLibrary(body);return send(200,{valid:true})}
  if(req.method==='GET'&&p==='/api/inventory'){const project=store.library.projects.find(x=>x.id===url.searchParams.get('projectId'));if(!project)throw Error('Projekt fehlt');const data=inventory(project.root);for(const f of data.files)f.testIds=store.library.tests.filter(t=>t.projectId===project.id&&['path','left','right'].some(k=>t.config[k]&&path.resolve(project.root,t.config[k])===path.resolve(project.root,f.path))).map(t=>t.id);return send(200,data)}
@@ -2832,22 +3080,30 @@ export function createApp({dataDir=process.env.COCKPIT_DATA??path.join(ROOT,'.da
  if(req.method==='POST'&&p==='/api/runs')return send(202,runner.start(body));
  const match=p.match(/^\/api\/runs\/([a-f0-9-]+)(?:\/(cancel|manual|export))?$/);
  if(match){const run=store.runs.get(match[1]);if(!run)return send(404,{error:'Lauf fehlt'});if(req.method==='GET'&&!match[2])return send(200,run);if(req.method==='POST'&&match[2]==='cancel'){runner.cancel(run.id);return send(202,{cancelRequested:true})}if(req.method==='POST'&&match[2]==='manual')return send(200,runner.manual(run.id,body.index,body));if(req.method==='GET'&&match[2]==='export'){const format=url.searchParams.get('format')??'json';return send(200,exportRun(run,format),format==='junit'?'application/xml':format==='csv'?'text/csv':'text/plain')}}
- if(req.method==='GET'&&['/','/app.js','/quick-menu.js','/style.css'].includes(p)){const file=p==='/'?'index.html':p.slice(1);return send(200,fs.readFileSync(path.join(ROOT,'public',file),'utf8'),file.endsWith('.html')?'text/html':file.endsWith('.css')?'text/css':'text/javascript')}
+ if(req.method==='GET'&&['/','/app.js','/quick-menu.js','/ui-state.js','/style.css'].includes(p)){const file=p==='/'?'index.html':p.slice(1);return send(200,fs.readFileSync(path.join(ROOT,'public',file),'utf8'),file.endsWith('.html')?'text/html':file.endsWith('.css')?'text/css':'text/javascript')}
  send(404,{error:'Nicht gefunden'});
- }catch(e){send(400,{error:e.message})}
+ }catch(e){if(res.headersSent){res.destroy();return}send(400,{error:e.message})}
  });
- server.on('close',release);server.on('error',release);return {server,store,runner};
+ let closing;
+ const close=()=>closing??=new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>server.closeAllConnections(),shutdownGraceMs);timer.unref();
+   server.close(error=>{clearTimeout(timer);if(error)reject(error);else resolve()});
+   server.closeIdleConnections();
+ });
+ server.on('listening',()=>{boundPort=server.address()?.port??boundPort});
+ server.on('close',release);server.on('error',release);return {server,store,runner,close};
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const app=createApp(),port=Number(process.env.COCKPIT_PORT??4318);app.server.listen(port,'127.0.0.1',()=>console.log(`Evaluator – Inspector http://127.0.0.1:${app.server.address().port}`));app.server.on('error',e=>{console.error(e.message);process.exitCode=2});
- const stop=async()=>{if(app.runner.active){app.runner.cancel(app.runner.active.id);await app.runner.completion}app.server.close(()=>process.exit(0))};process.on('SIGINT',stop);process.on('SIGTERM',stop);
+ const stop=async()=>{if(app.runner.active){app.runner.cancel(app.runner.active.id);await app.runner.completion}await app.close()};process.on('SIGINT',stop);process.on('SIGTERM',stop);
 }
 
 
 ==============================================================================
 FILE: tests/core.test.mjs
-SHA256: 0e0737acbda6270ba619196c206da4f763062ea3e884060331e9ca27695861a1
+SHA256: 527334219bbc42f1d4d31b387d4b1fac52295583406e6ae5db8490baccdde18e
 ==============================================================================
+import {processIsRunning} from '../lib/process-termination.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -2895,7 +3151,7 @@ test('comparisons use bytes, normalized text and semantic JSON',async()=>{write(
 test('command exit and assertions are independent; arguments remain literal',async()=>{const args=['a;b','$(whoami)','x & y','space quote "','`literal`'];const c={executable:process.execPath,args:[path.join(root,'command.mjs'),...args],expectedExitCodes:[0],includes:[args.join('|')]};assert.equal((await exec('command',c)).status,'passed');assert.equal((await exec('command',{...c,includes:['absent']})).status,'failed');assert.equal((await exec('command',{...c,args:[path.join(root,'command.mjs'),'exit-one'],expectedExitCodes:[1],includes:['exit-one']})).status,'passed');await assert.rejects(execute(make('command',c),project,{allowCommands:false}),/deaktiviert/)});
 test('worker returns error for missing executable',async()=>{const r=await runOne(make('command',{executable:path.join(root,'missing.exe'),args:[],expectedExitCodes:[0]}),project,{allowCommands:true});assert.equal(r.status,'error');assert.match(r.error,/ENOENT/)});
 test('command timeout terminates process tree and records verified termination',async()=>{
- const pidFile=path.join(root,'timeout-child.pid');const t=make('command',{executable:process.execPath,args:[path.join(root,'tree.mjs'),path.join(root,'slow.mjs'),pidFile],expectedExitCodes:[0]},{timeoutMs:1200});const r=await runOne(t,project,{allowCommands:true});assert.equal(r.status,'timeout');assert.equal(r.evidence.termination,'process-tree-terminated');assert.ok(fs.existsSync(pidFile));const pid=Number(fs.readFileSync(pidFile,'utf8'));assert.throws(()=>process.kill(pid,0));
+ const pidFile=path.join(root,'timeout-child.pid');const t=make('command',{executable:process.execPath,args:[path.join(root,'tree.mjs'),path.join(root,'slow.mjs'),pidFile],expectedExitCodes:[0]},{timeoutMs:1200});const r=await runOne(t,project,{allowCommands:true});assert.equal(r.status,'timeout');assert.equal(r.evidence.termination,process.platform==='win32'?'process-tree-terminated':'process-group-terminated');assert.ok(fs.existsSync(pidFile));const pid=Number(fs.readFileSync(pidFile,'utf8'));assert.equal(processIsRunning(pid),false);
 });
 test('HTTP status, body, JSON, redirect and timeouts are distinguished',async()=>{
  const server=http.createServer((req,res)=>{if(req.url==='/hang')return;if(req.url==='/redirect'){res.writeHead(302,{Location:'/redirect'});res.end();return}res.writeHead(req.url==='/missing'?404:200,{'Content-Type':'application/json'});res.end('{"ok":true}')});server.listen(0,'127.0.0.1');await once(server,'listening');const base=`http://127.0.0.1:${server.address().port}`;
@@ -2904,14 +3160,14 @@ test('HTTP status, body, JSON, redirect and timeouts are distinguished',async()=
 test('suite aggregates failures, errors, manual and skipped distinctly',async()=>{const ts=[make('file',{path:'text.txt',exists:true},{id:'pass'}),make('text',{path:'text.txt',includes:['missing']},{id:'fail'}),make('json',{path:'broken.json',checks:[{path:'',op:'exists'}]},{id:'error'}),make('manual',{steps:['Check'],expected:'Expected'},{id:'manual'})];const dir=path.join(root,'suite-store'),store=new Store(dir,library(ts)),runner=new Runner(store);const r=runner.start({testIds:ts.map(t=>t.id)});await runner.completion;assert.equal(r.status,'error');assert.deepEqual(r.results.map(r=>r.status),['passed','failed','error','pending_manual']);const stopped=runner.start({testIds:ts.map(t=>t.id),stopOnFailure:true});await runner.completion;assert.deepEqual(stopped.results.map(r=>r.status),['passed','failed','skipped','skipped']);assert.equal(stopped.status,'failed')});
 test('cancellation stops the active process and prevents following command execution',async()=>{
  const pidFile=path.join(root,'cancel-child.pid'),sentinel=path.join(root,'must-not-exist');write('sentinel.mjs',"import fs from 'node:fs';fs.writeFileSync(process.argv[2],'unexpected');");
- const ts=[make('command',{executable:process.execPath,args:[path.join(root,'slow.mjs'),pidFile],expectedExitCodes:[0]},{id:'slow',timeoutMs:10000}),make('command',{executable:process.execPath,args:[path.join(root,'sentinel.mjs'),sentinel],expectedExitCodes:[0]},{id:'never'})];const runner=new Runner(new Store(path.join(root,'cancel-store'),library(ts)));const r=runner.start({testIds:ts.map(t=>t.id)});await new Promise((resolve,reject)=>{const started=Date.now(),timer=setInterval(()=>{if(fs.existsSync(pidFile)){clearInterval(timer);resolve()}else if(Date.now()-started>4000){clearInterval(timer);reject(Error('Child did not start'))}},30)});runner.cancel(r.id);await runner.completion;assert.equal(r.status,'cancelled');assert.deepEqual(r.results.map(r=>r.status),['cancelled','cancelled']);assert.equal(fs.existsSync(sentinel),false);assert.throws(()=>process.kill(Number(fs.readFileSync(pidFile,'utf8')),0));
+ const ts=[make('command',{executable:process.execPath,args:[path.join(root,'slow.mjs'),pidFile],expectedExitCodes:[0]},{id:'slow',timeoutMs:10000}),make('command',{executable:process.execPath,args:[path.join(root,'sentinel.mjs'),sentinel],expectedExitCodes:[0]},{id:'never'})];const runner=new Runner(new Store(path.join(root,'cancel-store'),library(ts)));const r=runner.start({testIds:ts.map(t=>t.id)});await new Promise((resolve,reject)=>{const started=Date.now(),timer=setInterval(()=>{if(fs.existsSync(pidFile)){clearInterval(timer);resolve()}else if(Date.now()-started>4000){clearInterval(timer);reject(Error('Child did not start'))}},30)});runner.cancel(r.id);await runner.completion;assert.equal(r.status,'cancelled');assert.deepEqual(r.results.map(r=>r.status),['cancelled','cancelled']);assert.equal(fs.existsSync(sentinel),false);assert.equal(processIsRunning(Number(fs.readFileSync(pidFile,'utf8'))),false);
 });
 test('manual result remains open until reviewer, observation and evidence are supplied',async()=>{const t=make('manual',{steps:['Observe'],expected:'A visible expected effect'});const store=new Store(path.join(root,'manual-store'),library([t])),runner=new Runner(store);const r=runner.start({testIds:[t.id]});await runner.completion;assert.equal(r.status,'pending_manual');assert.throws(()=>runner.manual(r.id,0,{status:'passed',note:'ok'}));runner.manual(r.id,0,{status:'passed',note:'Observed expected effect',evidence:'manual-protocol.txt',reviewer:'Local tester'});assert.equal(r.status,'passed');assert.equal(r.results[0].evidence.review.evidenceClass,'human-attestation');assert.throws(()=>runner.manual(r.id,0,{status:'failed',note:'change',evidence:'x',reviewer:'x'}))});
 test('definition snapshots, backups, repetition, idempotency and export persist correctly',async()=>{const t=make('file',{path:'text.txt',exists:true}),dir=path.join(root,'history-store'),store=new Store(dir,library([t])),runner=new Runner(store);const r=runner.start({testIds:[t.id],repeat:2,requestId:'same-request'});assert.equal(runner.start({testIds:[t.id],repeat:2,requestId:'same-request'}).id,r.id);assert.throws(()=>runner.start({testIds:[t.id]}),/bereits/);await runner.completion;const before=r.definitionHash;const l=structuredClone(store.library);l.tests[0].name='Changed';store.saveLibrary(l);assert.equal(r.definition.tests[0].name,'Fixture test');assert.equal(r.definitionHash,before);assert.equal(r.results.length,2);assert.equal(fs.readdirSync(path.join(dir,'backups')).length,1);const parsed=JSON.parse(exportRun(r,'json'));assert.deepEqual(parsed.results,r.results);assert.match(exportRun(r,'junit'),/tests="2" failures="0"/);assert.match(exportRun(r,'csv'),/"passed"/);const restarted=new Store(dir,library([]));assert.equal(restarted.runs.get(r.id).status,'passed')});
 test('restart marks interrupted work and preserves corrupt file warning',()=>{const dir=path.join(root,'restart-store'),s=new Store(dir,library([]));atomic(path.join(dir,'runs','interrupted.json'),{id:'interrupted',status:'running',startedAt:new Date().toISOString(),results:[{testId:'x',status:'running'},{testId:'y',status:'queued'}]});fs.writeFileSync(path.join(dir,'runs','bad.json'),'{');const next=new Store(dir,s.library);assert.equal(next.runs.get('interrupted').status,'interrupted');assert.equal(next.warnings.length,1)});
 test('aggregates never pass empty, skipped, pending, failed or incomplete work',()=>{for(const status of ['failed','error','timeout','cancelled','interrupted','pending_manual','skipped','queued','running'])assert.notEqual(aggregate([{status:'passed'},{status}]),'passed');assert.equal(aggregate([]),'error')});
 test('idempotency rejects a different payload under the same request ID',async()=>{const runner=new Runner(new Store(path.join(root,'idempotency-store'),library([make('file',{path:'text.txt',exists:true})])));runner.start({testIds:['test'],requestId:'unique'});await runner.completion;assert.throws(()=>runner.start({testIds:['test'],requestId:'unique',repeat:2}),/andere Anforderung/)});
-test('oversized process output is an error and terminates surviving descendants',async()=>{const pidFile=path.join(root,'overflow.pid');write('overflow.mjs',"import {spawn} from 'node:child_process';import fs from 'node:fs';const c=spawn(process.execPath,[process.argv[2],process.argv[3]],{stdio:'ignore',windowsHide:true});const timer=setInterval(()=>{if(fs.existsSync(process.argv[3])){clearInterval(timer);process.stdout.write('x'.repeat(9*1024*1024));}},20);setInterval(()=>{},1000);");const t=make('command',{executable:process.execPath,args:[path.join(root,'overflow.mjs'),path.join(root,'slow.mjs'),pidFile],expectedExitCodes:[0]});const r=await runOne(t,project,{allowCommands:true});assert.equal(r.status,'error');assert.match(r.error,/8 MiB/);assert.equal(r.evidence.termination,'process-tree-terminated');assert.throws(()=>process.kill(Number(fs.readFileSync(pidFile,'utf8')),0))});
+test('oversized process output is an error and terminates surviving descendants',async()=>{const pidFile=path.join(root,'overflow.pid');write('overflow.mjs',"import {spawn} from 'node:child_process';import fs from 'node:fs';const c=spawn(process.execPath,[process.argv[2],process.argv[3]],{stdio:'ignore',windowsHide:true});const timer=setInterval(()=>{if(fs.existsSync(process.argv[3])){clearInterval(timer);process.stdout.write('x'.repeat(9*1024*1024));}},20);setInterval(()=>{},1000);");const t=make('command',{executable:process.execPath,args:[path.join(root,'overflow.mjs'),path.join(root,'slow.mjs'),pidFile],expectedExitCodes:[0]});const r=await runOne(t,project,{allowCommands:true});assert.equal(r.status,'error');assert.match(r.error,/8 MiB/);assert.equal(r.evidence.termination,process.platform==='win32'?'process-tree-terminated':'process-group-terminated');assert.equal(processIsRunning(Number(fs.readFileSync(pidFile,'utf8'))),false)});
 test('JUnit escapes data and preserves non-pass states; CSV neutralizes formulas',()=>{const r={name:'A < B',results:[{testId:'=HYPERLINK("evil")',status:'failed',iteration:1,assertions:[{actual:'<script>&',expected:'ok'}]},{testId:'manual',status:'pending_manual',iteration:1}]};assert.match(exportRun(r,'junit'),/A &lt; B/);assert.match(exportRun(r,'junit'),/<skipped message="pending_manual"/);assert.match(exportRun(r,'csv'),/"'=HYPERLINK/)});
 test('API enforces token/origin/host, validates import atomically, runs and exports',async()=>{
  const app=createApp({dataDir:path.join(root,'api-store'),initial:library([make('file',{path:'text.txt',exists:true})])});app.server.listen(0,'127.0.0.1');await once(app.server,'listening');const base=`http://127.0.0.1:${app.server.address().port}`;
@@ -2922,8 +3178,61 @@ test('API enforces token/origin/host, validates import atomically, runs and expo
 
 
 ==============================================================================
+FILE: tests/delivery.test.mjs
+SHA256: 291dfc2171e6b6c4f112ad881759c3c63ed72acb5a36d31d892f942f1f8888c1
+==============================================================================
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import net from 'node:net';
+import {once} from 'node:events';
+import {spawn,spawnSync} from 'node:child_process';
+import {createApp,ROOT} from '../server.mjs';
+import {sourceFiles} from '../lib/source-bundle.mjs';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'evaluator-delivery-'));
+test.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+const pwsh='C:/Program Files/PowerShell/7/pwsh.exe';
+
+test('shutdown deadline closes an unfinished request and releases the writer lock',async()=>{
+  const dir=path.join(root,'slow');const app=createApp({dataDir:dir,shutdownGraceMs:100});
+  app.server.listen(0,'127.0.0.1');await once(app.server,'listening');const port=app.server.address().port;
+  const socket=net.createConnection({host:'127.0.0.1',port});await once(socket,'connect');
+  socket.on('error',()=>{});socket.resume();const closed=once(socket,'close');
+  socket.write(`POST /api/runs HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nContent-Length: 1000\r\n\r\n{`);
+  await new Promise(resolve=>setTimeout(resolve,20));
+  const start=performance.now();await app.close();await closed;
+  assert.ok(performance.now()-start<2000);assert.equal(fs.existsSync(path.join(dir,'service.lock')),false);
+});
+
+test('Windows stop script proves child process exit and lock removal',{skip:process.platform!=='win32'},async()=>{
+  const dir=path.join(root,'stop');
+  const child=spawn(process.execPath,[path.join(ROOT,'server.mjs')],{env:{...process.env,COCKPIT_DATA:dir,COCKPIT_PORT:'0'},stdio:['ignore','pipe','pipe'],windowsHide:true});
+  let output='',errors='';child.stderr.on('data',b=>errors+=b);const exited=once(child,'exit');
+  try {
+    const port=await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(Error('start deadline: '+errors)),5000);
+      child.once('error',reject);child.stdout.on('data',b=>{output+=b;const match=output.match(/127\.0\.0\.1:(\d+)/);if(match){clearTimeout(timer);resolve(match[1])}});
+    });
+    const stop=spawnSync(pwsh,['-NoProfile','-File',path.join(ROOT,'Stop-Evaluator.ps1'),'-Port',port],{encoding:'utf8',windowsHide:true,timeout:15000});
+    assert.equal(stop.status,0,stop.stderr);assert.match(stop.stdout,/Sperre freigegeben|sperre freigegeben/);
+    assert.deepEqual(await exited,[0,null]);assert.equal(fs.existsSync(path.join(dir,'service.lock')),false);
+  } finally {if(child.exitCode===null)child.kill()}
+});
+
+test('packager output is read independently using .NET ZIP and SHA256',{skip:process.platform!=='win32'},()=>{
+  const copy=path.join(root,'package');fs.mkdirSync(copy);
+  for(const {name,data} of sourceFiles(ROOT)){const file=path.join(copy,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,data)}
+  const built=spawnSync(process.execPath,[path.join(copy,'tools/package.mjs')],{encoding:'utf8',windowsHide:true});assert.equal(built.status,0,built.stderr);
+  const verified=spawnSync(pwsh,['-NoProfile','-File',path.join(copy,'tools/verify-package.ps1'),'-Root',copy],{encoding:'utf8',windowsHide:true});
+  assert.equal(verified.status,0,verified.stderr);assert.match(verified.stdout,/PACKAGE_VERIFIED entries=\d+ sha256=verified reader=dotnet/);
+});
+
+
+==============================================================================
 FILE: tests/extended.test.mjs
-SHA256: 72e2841dbeead48cf0f5ba3cd6a508c4f91e21c270e91227d18fc6b7a916a957
+SHA256: 3c1c9a0f0a8cba1ff21a1a848a37b52ccf82c9df23e135bce98f26be3f003fe0
 ==============================================================================
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -2975,7 +3284,7 @@ test('checklists cannot import past verdicts and every new execution starts pend
 test('strict dates and formats reject impossible date, bad URL and leading-zero SemVer',async()=>{for(const [format,input]of [['iso_date','2026-99-99'],['iso_date','2025-02-29'],['url','http://?'],['semver','01.2.3'],['ipv4','256.1.2.3']])assert.equal((await executeTest('format',{format,input})).status,'failed');assert.equal((await executeTest('date',{input:'2024-02-29',operator:'valid'})).status,'passed');await assert.rejects(executeTest('date',{input:'2026-01-01',operator:'before',reference:'bad'}),/referenz/i)});
 test('empty tables and invalid definitions rejected before execution',()=>{assert.throws(()=>validateTest(t('table',{rows:[]}),[project]));assert.throws(()=>validateTest(t('assert',{actual:1,expected:1,operator:'magic'}),[project]));assert.throws(()=>validateTest(t('numeric',{expression:'1',operator:'approx',expected:1,tolerance:-1}),[project]))});
 test('null expected values remain null in persisted assertion evidence',async()=>{fs.writeFileSync(path.join(root,'null.json'),'{"x":null}');const r=await executeTest('json',{path:'null.json',checks:[{path:'/x',op:'eq',value:null}]});assert.equal(r.status,'passed');assert.equal(r.assertions[0].expected,null)});
-test('catastrophic regex is terminated by parent deadline, next test still runs',async()=>{const def=t('regex',{input:'a'.repeat(35)+'!',pattern:'^(a+)+$',flags:'',shouldMatch:false},{timeoutMs:250});const r=await runOne(def,project,{});assert.equal(r.status,'timeout');assert.equal(r.evidence.termination,'process-tree-terminated');const next=await runOne(t('expression'),project,{});assert.equal(next.status,'passed')});
+test('catastrophic regex is terminated by parent deadline, next test still runs',async()=>{const def=t('regex',{input:'a'.repeat(35)+'!',pattern:'^(a+)+$',flags:'',shouldMatch:false},{timeoutMs:250});const r=await runOne(def,project,{});assert.equal(r.status,'timeout');assert.equal(r.evidence.termination,process.platform==='win32'?'process-tree-terminated':'process-group-terminated');const next=await runOne(t('expression'),project,{});assert.equal(next.status,'passed')});
 test('all 108 quick presets instantiate distinct pending cases with source boundaries',()=>{const data=JSON.parse(fs.readFileSync(path.join(ROOT,'resources','quick-presets.json')));assert.equal(data.presets.length,108);assert.equal(data.presets.filter(p=>p.group==='Lehren').length,8);for(const p of data.presets){const plan=instantiatePreset(p,project);const count=(p.variants?.length??1)*3;assert.equal(plan.tests.length,count);assert.equal(new Set(plan.tests.map(t=>t.id)).size,count);validateLibrary({...library(plan.tests),suites:[plan.suite]});assert.ok(plan.tests.every(t=>t.type==='manual'&&t.source&&t.oracle&&t.counterexamples&&t.scope))}assert.throws(()=>instantiatePreset(data.presets[0],{...project,candidate:''}),/Kandidaten/)});
 test('quick program mode requires independent configured commands for all three cases',()=>{const preset=JSON.parse(fs.readFileSync(path.join(ROOT,'resources','quick-presets.json'))).presets[0];assert.throws(()=>instantiatePreset(preset,project,{mode:'command',commands:{}}),/jeden Fall/);const command={executable:process.execPath,args:['--version'],expectedExitCodes:[0]};const plan=instantiatePreset(preset,project,{mode:'command',commands:{positive:command,negative:command,readback:command}});validateLibrary({...library(plan.tests),suites:[plan.suite]})});
 test('gate requires its own complete current testplan; unrelated success and stale definition do not pass',async()=>{const def=t('expression'),s={id:'suite',name:'Suite',testIds:[def.id],stopOnFailure:false},l={...library([def]),suites:[s]},store=new Store(path.join(root,'gate-store'),l),runner=new Runner(store);const single=runner.start({testIds:[def.id]});await runner.completion;assert.equal(single.status,'passed');assert.equal(suiteVerdict(s,l,store.runs.values()).status,'untested');const full=runner.start({suiteId:s.id});await runner.completion;assert.equal(suiteVerdict(s,l,store.runs.values()).status,'passed');const changed=structuredClone(l);changed.tests[0].config.expected=99;assert.equal(suiteVerdict(s,changed,store.runs.values()).status,'stale');const targetChanged=structuredClone(l);targetChanged.projects[0].candidate='other';assert.equal(suiteVerdict(s,targetChanged,store.runs.values()).status,'stale');const incomplete=structuredClone(full);incomplete.results=[];assert.equal(suiteVerdict(s,l,[incomplete]).status,'incomplete')});
@@ -3010,6 +3319,247 @@ test('source bundle includes runnable assets and excludes private data and mutat
 
 
 ==============================================================================
+FILE: tests/patch.test.mjs
+SHA256: 797019410dfee78eea82c9c7ac223b254055d99a8b01d90e7c326a10cc5747e7
+==============================================================================
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import net from 'node:net';
+import {once} from 'node:events';
+import {spawnSync} from 'node:child_process';
+import {execute,pointer,parseCSV} from '../lib/adapters.mjs';
+import {parseHTML,checkHTML} from '../lib/html-rules.mjs';
+import {evaluateExpression} from '../lib/expression.mjs';
+import {Store,Runner,runOne,killTree,engineIdentity,exportRun} from '../lib/runner.mjs';
+import {validateTest,VERSION} from '../lib/contract.mjs';
+import {createApp,ROOT} from '../server.mjs';
+import {readApiResponse,shouldRefreshView,preserveView} from '../public/ui-state.js';
+
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'evaluator-patch-'));
+test.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+const project={id:'fixture',name:'Fixture',root};
+const make=(type,config,id='fixture')=>({id,name:id,purpose:'Patch regression',projectId:'fixture',type,timeoutMs:4000,config});
+const library=(tests=[])=>({schemaVersion:1,projects:[project],tests,suites:[],settings:{allowCommands:true}});
+const write=(name,value)=>fs.writeFileSync(path.join(root,name),value);
+const exec=(type,config)=>execute(make(type,config),project,{allowCommands:true});
+
+test('JSON pointer only resolves canonical array indices; object keys stay valid',()=>{
+  const value={a:[1,2],o:{length:3,'01':'value'}};
+  for(const key of ['length','01','-','-1','1e0'])assert.deepEqual(pointer(value,'/a/'+key),{exists:false});
+  assert.deepEqual(pointer(value,'/a/0'),{exists:true,value:1});
+  assert.deepEqual(pointer(value,'/o/length'),{exists:true,value:3});
+  assert.deepEqual(pointer(value,'/o/01'),{exists:true,value:'value'});
+});
+
+test('numeric CSV rules reject invalid values even for ne',async t=>{
+  for(const raw of ['Infinity','-Infinity','NaN','0x10','','1e999','bad'])await t.test(JSON.stringify(raw),async()=>{
+    write('number.csv','x\n"'+raw+'"\n');
+    for(const op of ['eq','ne','gte'])assert.equal((await exec('csv',{path:'number.csv',rules:[{column:'x',op,value:0}]})).status,'failed');
+  });
+  write('number.csv','x\n" 1e3 "\n');
+  assert.equal((await exec('csv',{path:'number.csv',rules:[{column:'x',op:'eq',value:1000}]})).status,'passed');
+});
+
+test('text lines count physical lines for LF, CRLF and CR',async()=>{
+  for(const [text,count] of [['',0],['a',1],['a\n',1],['\n',1],['a\n\n',2],['a\rb',2],['a\r\nb\r\n',2]]){
+    write('lines.txt',text);const result=await exec('text',{path:'lines.txt',minLines:count,maxLines:count});
+    assert.equal(result.status,'passed',JSON.stringify(text));assert.equal(result.evidence.lines,count);
+  }
+});
+
+test('text comparison normalizes CR but byte comparison preserves it',async()=>{
+  write('left.txt','a\rb\r');write('right.txt','a\nb\n');
+  assert.equal((await exec('compare',{left:'left.txt',right:'right.txt',mode:'text'})).status,'passed');
+  assert.equal((await exec('compare',{left:'left.txt',right:'right.txt',mode:'bytes'})).status,'failed');
+});
+
+test('command output preserves split UTF-8 on both streams',async()=>{
+  write('split.mjs',`process.stdout.write(Buffer.from([0xc3]));process.stderr.write(Buffer.from([0xf0,0x9f]));setTimeout(()=>{process.stdout.write(Buffer.from([0xa4]));process.stderr.write(Buffer.from([0x91,0x8d]));},80);`);
+  const result=await runOne(make('command',{executable:process.execPath,args:[path.join(root,'split.mjs')],expectedExitCodes:[0],includes:['ä'],excludes:['�']}),project,{allowCommands:true});
+  assert.equal(result.status,'passed');assert.equal(result.evidence.process.stdout,'ä');assert.equal(result.evidence.process.stderr,'👍');
+});
+
+test('invalid UTF-8 process output is a controlled adapter error',async()=>{
+  write('invalid.mjs','process.stdout.write(Buffer.from([0xff]));');
+  const result=await runOne(make('command',{executable:process.execPath,args:[path.join(root,'invalid.mjs')],expectedExitCodes:[0]}),project,{allowCommands:true});
+  assert.equal(result.status,'error');assert.match(result.error,/UTF-8/);
+});
+
+test('unverified termination overrides a successful result',async()=>{
+  write('exists.txt','x');
+  const result=await runOne(make('file',{path:'exists.txt',exists:true}),project,{},undefined,{terminate:async child=>{await killTree(child);throw Error('injected verification failure')}});
+  assert.equal(result.status,'error');assert.equal(result.evidence.termination,'unverified');assert.equal(result.evidence.requestedStatus,'passed');
+});
+
+test('CSV export neutralizes formulas behind whitespace without breaking quoting',()=>{
+  for(const value of ['=1','\t=1','\r=1',' =1','\n@SUM(1)','\ttext','+1','-1']){
+    const exported=exportRun({results:[{testId:'id',status:'error',error:value}]},'csv');
+    assert.equal(parseCSV(exported).rows[0][4],"'"+value);
+  }
+  assert.equal(parseCSV(exportRun({results:[{testId:'id',status:'error',error:'safe,"text"'}]},'csv')).rows[0][4],'safe,"text"');
+});
+
+test('raw text and RCDATA cannot manufacture HTML elements or event attributes',()=>{
+  for(const tag of ['script','style','textarea','title']){
+    const input=`<${tag}><button onclick="bad()">fake</button></${tag}><button>real</button>`;
+    const nodes=parseHTML(input).nodes;
+    assert.deepEqual(nodes.map(n=>n.tag),[tag,'button']);
+  }
+  assert.deepEqual(parseHTML('<script></scripture><button>fake</button></SCRIPT ><button>real</button>').nodes.map(n=>n.tag),['script','button']);
+  assert.equal(checkHTML('<button><script>fake name</script></button>',['button-name'],{})[0].passed,false);
+});
+
+test('accessible image names respect alt and aria-hidden',()=>{
+  for(const html of ['<button><img alt="Search"></button>','<input type="image" alt="Search">','<button><svg><title>Search</title></svg></button>']){
+    assert.ok(checkHTML(html,['button-name','input-name'],{}).every(r=>r.passed),html);
+  }
+  for(const html of ['<button><img alt=""></button>','<button><img alt="Search" aria-hidden="true"></button>'])assert.equal(checkHTML(html,['button-name'],{})[0].passed,false);
+});
+
+test('len uses codepoints for strings and element counts for arrays',()=>{
+  assert.equal(evaluateExpression('len("👍")'),1);assert.equal(evaluateExpression('len("a👍")'),2);
+  assert.equal(evaluateExpression('len("é")'),2);assert.equal(evaluateExpression('len([1,2])'),2);
+});
+
+test('HTTP excludes is validated and enforced against a real local response',async()=>{
+  const server=http.createServer((req,res)=>res.end('forbidden'));server.listen(0,'127.0.0.1');await once(server,'listening');
+  try{
+    const config={url:`http://127.0.0.1:${server.address().port}`,method:'GET',status:[200],excludes:['forbidden']};
+    validateTest(make('http',config),[project]);assert.equal((await exec('http',config)).status,'failed');
+    assert.throws(()=>validateTest(make('http',{...config,excludes:1}),[project]));
+  }finally{await new Promise(resolve=>server.close(resolve))}
+});
+
+test('recovery skips corrupt newest backup and preserves original bytes',()=>{
+  const dir=path.join(root,'recovery');const store=new Store(dir,library());
+  const backups=path.join(dir,'backups');fs.mkdirSync(backups);
+  fs.writeFileSync(path.join(backups,'1000-aaaa.json'),JSON.stringify(store.library));
+  fs.writeFileSync(path.join(backups,'2000-bbbb.json'),'{bad backup');
+  fs.writeFileSync(store.libraryFile,Buffer.from([0xff,0x00,0x7b]));
+  const recovered=new Store(dir,library());
+  assert.equal(recovered.library.projects[0].id,'fixture');assert.equal(recovered.library.settings.allowCommands,false);
+  assert.equal(recovered.warnings.length,2);
+  const preserved=fs.readdirSync(dir).find(n=>n.startsWith('library.corrupt-'));
+  assert.deepEqual(fs.readFileSync(path.join(dir,preserved)),Buffer.from([0xff,0x00,0x7b]));
+  assert.deepEqual(JSON.parse(fs.readFileSync(store.libraryFile,'utf8')),recovered.library);
+});
+
+test('corrupt library without valid backup remains intact and never silently seeds',()=>{
+  const dir=path.join(root,'no-backup');const store=new Store(dir,library());write('dummy','x');
+  fs.writeFileSync(store.libraryFile,'{corrupt');assert.throws(()=>new Store(dir,library()),/kein gültiges Backup/);
+  assert.equal(fs.readFileSync(store.libraryFile,'utf8'),'{corrupt');
+});
+
+test('one adapter rejection does not suppress remaining tests unless requested',async()=>{
+  for(const stopOnFailure of [false,true]){
+    const tests=[make('file',{path:'exists.txt',exists:true},'first'),make('file',{path:'exists.txt',exists:true},'second')];
+    let calls=0;const runner=new Runner(new Store(path.join(root,'isolation-'+stopOnFailure),library(tests)),{executeOne:async t=>{if(++calls===1)throw Error('isolated failure');return {testId:t.id,status:'passed',assertions:[],evidence:{}}}});
+    const run=runner.start({testIds:['first','second'],stopOnFailure});await runner.completion;
+    assert.deepEqual(run.results.map(r=>r.status),['error',stopOnFailure?'skipped':'passed']);
+  }
+});
+
+test('execution identity includes server, CLI, presets and UI but excludes prose',()=>{
+  const copy=path.join(root,'identity');fs.mkdirSync(copy);
+  for(const dir of ['lib','public','resources'])fs.mkdirSync(path.join(copy,dir));
+  for(const file of ['package.json','server.mjs','cli.mjs','lib/a.mjs','public/a.js','resources/p.json'])fs.writeFileSync(path.join(copy,file),'original');
+  const initial=engineIdentity(copy);
+  for(const file of ['server.mjs','cli.mjs','public/a.js','resources/p.json']){
+    fs.writeFileSync(path.join(copy,file),'changed');assert.notEqual(engineIdentity(copy),initial,file);fs.writeFileSync(path.join(copy,file),'original');
+  }
+  fs.writeFileSync(path.join(copy,'README.md'),'new prose');assert.equal(engineIdentity(copy),initial);
+});
+
+test('API conflicts preserve first writer and distinguish active-run locks',async()=>{
+  const app=createApp({dataDir:path.join(root,'conflicts'),initial:library([make('manual',{steps:['Check'],expected:'Observed'})])});
+  app.server.listen(0,'127.0.0.1');await once(app.server,'listening');const base=`http://127.0.0.1:${app.server.address().port}`;
+  try{
+    const state=await(await fetch(base+'/api/bootstrap')).json(),headers={'Content-Type':'application/json','X-Cockpit-Token':state.token,'If-Match':state.libraryRevision};
+    const first=structuredClone(state.library);first.projects[0].name='First writer';
+    assert.equal((await fetch(base+'/api/library',{method:'PUT',headers,body:JSON.stringify(first)})).status,200);
+    const second=await fetch(base+'/api/library',{method:'PUT',headers,body:JSON.stringify(state.library)});
+    assert.equal(second.status,409);assert.equal((await second.json()).code,'LIBRARY_CONFLICT');assert.equal(app.store.library.projects[0].name,'First writer');
+    app.runner.active={id:'fixture'};
+    const active=await fetch(base+'/api/library',{method:'PUT',headers,body:JSON.stringify(first)});
+    assert.equal((await active.json()).code,'RUN_ACTIVE');app.runner.active=null;
+    assert.equal((await fetch(base+'/ui-state.js')).status,200);
+  }finally{await app.close()}
+});
+
+test('shutdown closes slow clients and blocks accepted delayed writes',async()=>{
+  const dir=path.join(root,'shutdown');const app=createApp({dataDir:dir,initial:library([make('manual',{steps:['Check'],expected:'Observed'})]),shutdownGraceMs:200});
+  app.server.listen(0,'127.0.0.1');await once(app.server,'listening');const port=app.server.address().port,base=`http://127.0.0.1:${port}`;
+  const {token}=await(await fetch(base+'/api/bootstrap')).json();
+  const body=JSON.stringify({testIds:['fixture']});
+  const socket=net.createConnection({host:'127.0.0.1',port});socket.on('error',()=>{});await once(socket,'connect');
+  let output='';socket.on('data',chunk=>output+=chunk);const ended=once(socket,'close');
+  socket.write(`POST /api/runs HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nX-Cockpit-Token: ${token}\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n`+body.slice(0,1));
+  const shutdown=await fetch(base+'/api/shutdown',{method:'POST',headers:{'X-Cockpit-Token':token}});assert.equal(shutdown.status,202);
+  socket.write(body.slice(1));await ended;await app.close();
+  assert.match(output,/503/);assert.equal(app.store.runs.size,0);assert.equal(app.runner.active,null);assert.equal(fs.existsSync(path.join(dir,'service.lock')),false);
+});
+
+test('frontend conflict errors retain status and code without implicit overwrites',async()=>{
+  await assert.rejects(readApiResponse({ok:false,status:409,json:async()=>({code:'LIBRARY_CONFLICT',error:'changed'})}),error=>error.status===409&&error.code==='LIBRARY_CONFLICT');
+  assert.deepEqual(await readApiResponse({ok:true,status:200,json:async()=>({library:{tests:[]}})}),{library:{tests:[]}});
+  await assert.rejects(readApiResponse({ok:false,status:500,json:async()=>({})}),error=>error.message==='Anfrage fehlgeschlagen'&&error.status===500&&error.code===undefined);
+  for(const view of ['tests','settings','files','quick','unbekannt'])assert.equal(shouldRefreshView(view,false),false);
+  for(const view of ['overview','runs','suites'])assert.equal(shouldRefreshView(view,false),true);
+  for(const view of ['overview','runs','suites'])assert.equal(shouldRefreshView(view,true),false);
+});
+
+test('result refresh preserves expanded evidence, control value, focus and scroll',()=>{
+  let rendered=false,focused=false,scrolled;
+  const detail={open:true},input={id:'choice',value:'chosen',checked:true,focus:()=>focused=true};
+  const content={querySelectorAll:selector=>selector==='details'?[detail]:[input]};
+  const document={activeElement:input,querySelector:selector=>selector==='#content'?content:null,getElementById:id=>id==='choice'?input:null};
+  const window={scrollX:4,scrollY:123,scrollTo:(x,y)=>scrolled=[x,y]};
+  preserveView(document,window,()=>{rendered=true;detail.open=false;input.value='';input.checked=false});
+  assert.ok(rendered&&focused);assert.equal(detail.open,true);assert.equal(input.value,'chosen');assert.equal(input.checked,true);assert.deepEqual(scrolled,[4,123]);
+});
+
+test('result refresh invalidates a stale comparison and survives selectionless fields',()=>{
+  let selected=null;
+  const number={id:'repeat',value:'2',checked:false,focus:()=>{},get selectionStart(){throw new TypeError('kein Selektionsbereich')},setSelectionRange:()=>{selected='gesetzt'}};
+  const compareRun={id:'compareRun',value:'run-7',checked:false},comparison={innerHTML:'<table></table>',textContent:''};
+  const content={querySelectorAll:selector=>selector==='details'?[]:[number,compareRun]};
+  const nodes={repeat:number,compareRun};
+  const document={activeElement:number,querySelector:selector=>selector==='#content'?content:selector==='#comparison'?comparison:null,getElementById:id=>nodes[id]??null};
+  const window={scrollX:0,scrollY:40,scrollTo:()=>{}};
+  preserveView(document,window,()=>{number.value='';compareRun.value=''});
+  assert.equal(number.value,'2');
+  assert.equal(selected,null);
+  assert.match(comparison.textContent,/Vergleichslauf erneut/);
+  assert.equal(compareRun.value,'');
+});
+
+test('result refresh keeps an empty comparison untouched',()=>{
+  const comparison={innerHTML:'',textContent:''};
+  const content={querySelectorAll:()=>[]};
+  const document={activeElement:null,querySelector:selector=>selector==='#content'?content:selector==='#comparison'?comparison:null,getElementById:()=>null};
+  preserveView(document,{scrollX:0,scrollY:0,scrollTo:()=>{}},()=>{});
+  assert.equal(comparison.textContent,'');
+});
+
+test('CLI exit contract and output artifacts are verified in independent processes',()=>{
+  const fixtures=[['pass',make('file',{path:'exists.txt',exists:true}),0],['fail',make('file',{path:'missing',exists:true}),1],['manual',make('manual',{steps:['Check'],expected:'Observed'}),1],['error',make('text',{path:'missing',includes:['x']}),2],['timeout',{...make('command',{executable:process.execPath,args:['-e','setInterval(()=>{},1000)'],expectedExitCodes:[0]}),timeoutMs:200},2]];
+  for(const [name,definition,expected] of fixtures){
+    const file=path.join(root,name+'.json'),out=path.join(root,'cli-'+name);fs.writeFileSync(file,JSON.stringify(library([definition])));
+    const result=spawnSync(process.execPath,[path.join(ROOT,'cli.mjs'),'run',file,'--output',out,'--allow-commands'],{encoding:'utf8',windowsHide:true,timeout:10000});
+    assert.equal(result.status,expected,result.stderr);assert.ok(fs.existsSync(path.join(out,'results.xml')));assert.ok(fs.existsSync(path.join(out,'results.csv')));assert.equal(fs.existsSync(path.join(out,'service.lock')),false);
+    const repeated=spawnSync(process.execPath,[path.join(ROOT,'cli.mjs'),'run',file,'--output',out],{encoding:'utf8',windowsHide:true});assert.equal(repeated.status,2);
+  }
+  const invalid=path.join(root,'invalid.json');fs.writeFileSync(invalid,'{}');
+  assert.equal(spawnSync(process.execPath,[path.join(ROOT,'cli.mjs'),'validate',invalid],{windowsHide:true}).status,2);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8')).version,VERSION);
+});
+
+
+==============================================================================
 FILE: tools/export-examples.mjs
 SHA256: a2b9755aa3dd1dcc918cb0b1d9e55eb6de66cdf2faa71caa9e720775aa0d5880
 ==============================================================================
@@ -3040,6 +3590,40 @@ for(const file of files){const name=Buffer.from(prefix+file.name),data=file.data
 const directory=Buffer.concat(central),end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50);end.writeUInt16LE(files.length,8);end.writeUInt16LE(files.length,10);end.writeUInt32LE(directory.length,12);end.writeUInt32LE(offset,16);
 const zip=Buffer.concat([...locals,directory,end]),text=sourceText(root);fs.writeFileSync(path.join(out,'Evaluator-Inspector.zip'),zip);fs.writeFileSync(path.join(out,'Evaluator-Inspector-komplettes-programm.txt'),text);
 const manifest={createdAt:new Date().toISOString(),files:files.map(({name,sha256,data})=>({name,sha256,bytes:data.length})),zipSha256:crypto.createHash('sha256').update(zip).digest('hex'),textSha256:crypto.createHash('sha256').update(text).digest('hex')};fs.writeFileSync(path.join(out,'manifest.json'),JSON.stringify(manifest,null,2));console.log(JSON.stringify({files:files.length,zipBytes:zip.length,output:out}));
+
+
+==============================================================================
+FILE: tools/verify-package.ps1
+SHA256: b5a2f6062445eb90fc502cfb0b7afa98513e2e7a1156546d3682dd9516d6d3c3
+==============================================================================
+param([Parameter(Mandatory = $true)][string]$Root)
+$ErrorActionPreference = 'Stop'
+$resolvedRoot = [IO.Path]::GetFullPath($Root)
+$exportDir = Join-Path $resolvedRoot 'exports'
+$manifestText = [IO.File]::ReadAllText((Join-Path $exportDir 'manifest.json'))
+$manifest = ConvertFrom-Json -InputObject $manifestText
+$zipFile = Join-Path $exportDir 'Evaluator-Inspector.zip'
+$textFile = Join-Path $exportDir 'Evaluator-Inspector-komplettes-programm.txt'
+function Hash-Bytes([byte[]]$Bytes) {
+    return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
+}
+if ((Hash-Bytes ([IO.File]::ReadAllBytes($zipFile))) -ne $manifest.zipSha256) { throw 'ZIP-Gesamthash falsch' }
+if ((Hash-Bytes ([IO.File]::ReadAllBytes($textFile))) -ne $manifest.textSha256) { throw 'Textpaket-Gesamthash falsch' }
+$archive = [IO.Compression.ZipFile]::OpenRead($zipFile)
+try {
+    if ($archive.Entries.Count -ne $manifest.files.Count) { throw 'ZIP-Dateimenge falsch' }
+    foreach ($file in $manifest.files) {
+        $entry = $archive.GetEntry('Evaluator-Inspector/' + $file.name)
+        if ($null -eq $entry) { throw "ZIP-Eintrag fehlt: $($file.name)" }
+        $stream = $entry.Open()
+        $memory = [IO.MemoryStream]::new()
+        try { $stream.CopyTo($memory); $bytes = $memory.ToArray() } finally { $stream.Dispose(); $memory.Dispose() }
+        if ($bytes.Length -ne $file.bytes -or (Hash-Bytes $bytes) -ne $file.sha256) { throw "ZIP-Inhalt falsch: $($file.name)" }
+        if ((Hash-Bytes ([IO.File]::ReadAllBytes((Join-Path $resolvedRoot $file.name)))) -ne $file.sha256) { throw "Quellhash falsch: $($file.name)" }
+        if ($file.name -match '(^|/)(\.data|evidence|node_modules)/') { throw 'Private Daten im Paket' }
+    }
+} finally { $archive.Dispose() }
+Write-Output "PACKAGE_VERIFIED entries=$($manifest.files.Count) sha256=verified reader=dotnet"
 
 
 ==============================================================================

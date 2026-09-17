@@ -4,9 +4,9 @@ Evaluator – Inspector 1.0.0 ist ein lokales Einzelbenutzerwerkzeug. Es umfasst
 
 ## Prüfungen
 
-Die automatisierte Suite umfasst 66 Regressionen. Sie prüft insbesondere positive und negative Adapterfälle, echte Prozessabbruch-/Timeoutwirkung, Schutz der Projektpfade, CSV-/JSON-Grenzfälle, Statistik, Datums-/Schema-/Regex-Regeln, atomare Importvalidierung, dauerhafte Snapshots, konkurrierende Änderungen, Testplanzuordnung und neue Checklistenurteile je Lauf.
+Die ursprüngliche Suite umfasst 66 Regressionen. Der vorbereitete Patch ergänzt gezielte Adapter-, Datenrettungs-, Shutdown-, CLI-, UI-Zustands- und Paketprüfungen. Die tatsächliche Testzahl und Ergebnisse stehen im TAP des jeweiligen Kandidaten. Die Suite prüft insbesondere positive und negative Adapterfälle, echte Prozessabbruch-/Timeoutwirkung, Schutz der Projektpfade, CSV-/JSON-Grenzfälle, Statistik, Datums-/Schema-/Regex-Regeln, atomare Importvalidierung, dauerhafte Snapshots, konkurrierende Änderungen, Testplanzuordnung und neue Checklistenurteile je Lauf.
 
-Ausführen: `node tools/verify.mjs`. Der Befehl schreibt TAP und ein Quellmanifest in den ignorierten Ordner evidence. Die GitHub-Actions-Workflowdatei führt dieselben Prüfungen unter Windows mit Node.js 22 und 24 aus. Der jeweilige Workflowstatus ist der Nachweis für den zugehörigen Commit.
+Ausführen: `node tools/verify.mjs`. Der Befehl schreibt TAP und ein Quellmanifest in den ignorierten Ordner evidence. Die vorbereitete GitHub-Actions-Workflowdatei enthält Windows, Ubuntu und macOS mit Node.js 22 und 24; sie generiert zuerst lokale Beispielpfade. Eine vorbereitete Matrix ist kein Ausführungsnachweis. Der jeweilige Workflowstatus ist erst nach tatsächlichem Lauf der Nachweis für den zugehörigen Commit. Windows-Stop- und .NET-Paketprüfungen werden auf anderen Plattformen ausdrücklich übersprungen. POSIX-Prozessgruppenprüfung umfasst keine Prozesse mit eigener Sitzung/Gruppe.
 
 Die lokale Ausgangslieferung wurde außerdem im Browser bedient: Beispielplan, konfigurierbare A04/A08-Varianten, absichtliche Regex-Gegenprobe und korrigierter Lauf, Vergleich, Checklistenurteile, Dateisuche und ungültiger Import. Start/Stop und Neustart bewahrten Definitionen und alle Lauf-Snapshots. Das Quellpaket wurde unabhängig entpackt und sein Beispielplan tatsächlich ausgeführt.
 

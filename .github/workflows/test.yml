@@ -8,13 +8,14 @@ permissions:
   contents: read
 jobs:
   regression:
-    name: Windows / Node ${{ matrix.node }}
-    runs-on: windows-2022
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         node: [22, 24]
+        os: [windows-2022, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -22,6 +23,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
+      - name: Generate platform-specific example paths
+        run: node tools/export-examples.mjs
       - name: Validate example definitions
         run: node cli.mjs validate examples/library.json
       - name: Run all regressions

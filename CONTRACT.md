@@ -359,3 +359,53 @@ http folgt keinen Redirects. status enthält die zulässigen Antworten. headers/
 - POST /api/shutdown — nur ohne aktiven Lauf; eigenes Dienstende separat verifizieren.
 
 Alle außer health/bootstrap benötigen X-Cockpit-Token aus bootstrap. Keine Fremd-Origin-Zugriffe. Änderungen während eines automatischen Laufs sind gesperrt. Import in der Oberfläche deaktiviert command-Ausführung. Erfolgreicher Transport allein bedeutet kein bestandenes Testergebnis; dafür den Laufstatus und seine Assertions lesen.
+
+## Präzisierungen des vorbereiteten Patches (Version bleibt 1.0.0)
+
+- Textzeilen: leere Datei = 0, LF/CRLF/CR trennen Zeilen; ein abschließender Umbruch erzeugt keine zusätzliche Zeile. `a\nb\n` hat 2 Zeilen. Textvergleich normalisiert CRLF und CR auf LF; Bytevergleich bleibt unverändert.
+- JSON-Pointer: Bei Arrays sind ausschließlich kanonische Indizes `0` oder eine Dezimalzahl ohne führende Null zulässig. `length`, `01`, `-` und geerbte Eigenschaften werden nicht aufgelöst. Objektfelder behalten ihre Namen.
+- Numerische CSV-Prüfungen akzeptieren endliche Dezimalzahlen einschließlich Exponent und äußerem Whitespace. Leere Werte, Hexzahlen, NaN und Infinity bestehen auch `ne` nicht.
+- `len` zählt bei Strings Unicode-Codepoints, bei Arrays Elemente; Grapheme wie kombinierte Akzente können mehrere Codepoints enthalten. Die Ausdruckssprache ist keine JavaScript-Syntax: `-2 ** 2` ergibt weiterhin -4.
+- HTTP unterstützt `includes` und `excludes` für den Antworttext. Command sammelt stdout und stderr als Bytes; das 8-MiB-Limit gilt für beide Ströme gemeinsam und wird als Ausführungsfehler gemeldet. Erst nach Prozessende wird jeder Strom vollständig und strikt als UTF-8 dekodiert, sodass mehrbytige Zeichen an Chunkgrenzen erhalten bleiben; ungültige Bytes in stdout oder stderr sind Ausführungsfehler. `includes`/`excludes` prüfen weiterhin nur stdout.
+- Security kennt auch `sql-patterns` (Muster `union select` und `drop table`). Alle Security-Regeln sind Mustererkennung, keine vollständige Sicherheitsprüfung. Die HTML-Teilmenge erkennt Raw-Text/RCDATA für script/style/textarea/title und Namen aus img-alt sowie input-image-alt. Der Endtag wird case-insensitiv erkannt und darf Leerraum enthalten (`</script >`); Inhalt von script/style trägt nicht zum Textinhalt bei. Die Raw-Text-Regel gilt unabhängig vom Namensraum, daher wird auch `<title>` innerhalb von `<svg>` als RCDATA gelesen und darin verschachtelte Elemente bleiben Text. Attributwerte werden nicht normalisiert; `type` wird für input-image-alt und Button-Werte kleingeschrieben erwartet. Sie bleibt ohne vollständige HTML5-Fehlerkorrektur; doppelte Attribute bleiben Fehler.
+- Engine-Identität (`engineHash`) umfasst package.json, server.mjs, cli.mjs sowie die direkten, nicht rekursiv gesammelten Quell-/Ressourcendateien in lib, public und resources mit den Endungen .mjs/.js/.html/.css/.json. Tests, Dokumentation, Beispielpfade, Werkzeugskripte in tools, Starter-/Stopper-Skripte und CI-Dateien sind ausgeschlossen. Der Umfang ist bewusst konservativ; auch eine UI-Änderung veraltet frühere Freigaben. Davon zu unterscheiden ist das Quellpaket (`tools/package.mjs`, TXT-Download): es enthält bewusst zusätzlich Tests, Dokumentation, Beispiele und Werkzeuge und geht nicht in `engineHash` ein.
+- Beschädigte aktuelle Bibliotheken werden ausschließlich aus dem jüngsten gültigen, vom Store benannten Backup wiederhergestellt. Die beschädigten Originalbytes bleiben separat erhalten, Warnungen sind in bootstrap enthalten und Programme werden deaktiviert. Ohne gültiges Backup verweigert der Start die Wiederherstellung und lässt das Original unverändert. Eine allgemeine Backup-Auswahloberfläche ist noch nicht enthalten.
+- Bei Revisionskonflikt bleibt der lokale Entwurf erhalten. Der Download enthält `library`, die fehlgeschlagene `request` sowie aktuelle `fields` aus offenen Dialogen. Dies ist ein Sicherungsformat für die gezielte Übertragung, keine unmittelbar importierbare Bibliothek. Ein aktualisierter Entwurf muss vor dem Laden des Serverstands erneut gesichert werden.
+- CLI: 0 = vollständig bestanden; 1 = fachlich fehlgeschlagen, abgebrochen, übersprungen oder manuell offen; 2 = Eingabe-, Ausführungs-, Timeout- oder Unterbrechungsfehler. Eine vorhandene Bibliothek im Ausgabeordner wird nicht überschrieben. Dienst und CLI verwenden dieselbe Schreibersperre.
+
+## Persistierter Lauf (schemaVersion der Bibliothek bleibt 1)
+
+Datei: `runs/<id>.json`. `id` ist eine UUID. Ein Lauf ist an seine gespeicherte Definition gebunden; spätere Bibliotheksänderungen schreiben diese nicht um.
+
+| Feld | Inhalt |
+| --- | --- |
+| id, requestId, requestHash | Laufidentität, Idempotenzschlüssel, Hash des Ausführungsauftrags |
+| name, status, startedAt, finishedAt | Anzeigename, Aggregatstatus, ISO-Zeitpunkte; finishedAt erst nach Abschluss |
+| engineVersion, engineHash | Produktversion und Quellidentität |
+| definitionHash, definition | Hash und Snapshot von projects, tests, settings, repeat, stopOnFailure; optional suite |
+| results | Geordnete Ergebnisse für Test und Wiederholung |
+| error | Optionaler laufweiter Infrastrukturfehler |
+
+Ergebnisse enthalten testId, iteration, status, assertions und evidence; nach Ausführung gegebenenfalls startedAt, finishedAt, durationMs, error oder reason. Assertions enthalten label, passed, actual, expected. Evidence ist adapterspezifisch (Dateihashes, HTTP-Antwort, Prozessausgabe, manuelle Urteile). `termination` ist unter Windows `process-tree-terminated`, unter POSIX `process-group-terminated`; die Reichweite steht in `terminationScope`. `unverified` erzwingt status=error und bewahrt den beabsichtigten Zustand in requestedStatus.
+
+Aggregatpriorität: running/queued → running; anschließend cancelled, interrupted, error, timeout, failed, pending_manual, skipped; passed ausschließlich wenn alle Ergebnisse passed sind. Ein leerer Lauf ist error. Der vollständige Ergebnisvektor bleibt bei gemischten Zuständen maßgeblich.
+
+## HTTP-Antworten
+
+| Situation / Route | Status |
+| --- | --- |
+| Erfolgreiche GETs, library PUT, validate, manuelles Urteil | 200 |
+| quick-plans erstellt | 201 |
+| Lauf, Abbruch oder Shutdown angenommen | 202; kein Nachweis des Abschlusses |
+| Ungültige Definition, JSON, Parameter, fehlender Projektordner, allgemeiner Ausführungsaufruf-Fehler | 400 mit error |
+| Host, Origin oder lokaler API-Marker nicht akzeptiert | 403 |
+| Unbekannte Route oder Lauf fehlt | 404 |
+| Bibliotheks-PUT während aktivem Lauf | 409, code=RUN_ACTIVE |
+| Veraltete Revision bei library/quick-plans | 409, code=LIBRARY_CONFLICT |
+| Shutdown während aktivem Lauf | 409 |
+| Eingabekörper >4 MiB | 413 |
+| Schreibanforderung nach Beginn des Shutdowns | 503, code=SERVICE_CLOSING |
+
+`/api/health` liefert zusätzlich pid und dataDir zur Prüfung des Dienstendes. Der Stop-Helfer prüft zuerst Dienstpfad, Sperr-PID und Portbesitzer, dann Prozessende und entfernte Sperre. Offene HTTP-Verbindungen werden nach einer Frist geschlossen; bereits angenommene, verzögerte Schreibanforderungen dürfen danach keine Arbeit starten.
+
+Die lokale API verwendet weiterhin einen Same-Origin-Marker aus bootstrap, keine Benutzeranmeldung. `allowCommands` bleibt eine globale Freigabe mit vollständiger geerbter Umgebung; HTTP-Ziele, Methoden und Bodies sind nicht separat freigegeben. Import über direkte API kann Programme freigeben. Dieser Patch beansprucht dafür keine Sicherheitsisolierung. Definitionen müssen weiterhin als vertrauenswürdige, potenziell wirkende Aufträge behandelt werden.
